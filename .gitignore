@@ -1,0 +1,33 @@
+# Dependencies & builds
+node_modules/
+dist/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Local data caches (re-downloadable from providers)
+services/.cache/
+data/raw/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+
+# Prototype screenshots temp
+screenshots-tmp/

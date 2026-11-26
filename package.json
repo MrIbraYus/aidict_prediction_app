@@ -1,0 +1,20 @@
+{
+  "name": "aidict",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AIDICT — multi-sport intelligence, statistics and prediction platform (personal use).",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "db:test": "node supabase/tests/run-migrations.mjs",
+    "prototype": "npm --prefix prototype run dev"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.6.0"
+  }
+}

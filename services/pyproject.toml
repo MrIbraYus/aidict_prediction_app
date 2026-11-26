@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aidict-services"
+version = "0.1.0"
+description = "AIDICT data engine, prediction engine and API"
+requires-python = ">=3.11"
+dependencies = [
+  "httpx>=0.28",
+  "pydantic>=2.9",
+  "numpy>=2.1",
+  "pandas>=2.2",
+  "scipy>=1.14",
+  "scikit-learn>=1.5",
+  "tzdata>=2024.2",  # IANA time zones on Windows (zoneinfo)
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "respx>=0.22"]
+api = ["fastapi>=0.115", "uvicorn>=0.32", "pyjwt>=2.9"]
+db = ["psycopg[binary]>=3.2"]
+
+[tool.setuptools.packages.find]
+where = ["data-engine", "prediction-engine", "api"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = ["live: hits real provider endpoints (run with -m live)"]

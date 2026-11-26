@@ -1,0 +1,51 @@
+[
+  {
+    "id": "new-prediction",
+    "file": "new-prediction.wav",
+    "durationMs": 600,
+    "peakDbfs": -3,
+    "licence": "Original — generated for AIDICT (CC0)"
+  },
+  {
+    "id": "kickoff-soon",
+    "file": "kickoff-soon.wav",
+    "durationMs": 850,
+    "peakDbfs": -3,
+    "licence": "Original — generated for AIDICT (CC0)"
+  },
+  {
+    "id": "match-live",
+    "file": "match-live.wav",
+    "durationMs": 550,
+    "peakDbfs": -3,
+    "licence": "Original — generated for AIDICT (CC0)"
+  },
+  {
+    "id": "goal",
+    "file": "goal.wav",
+    "durationMs": 1050,
+    "peakDbfs": -3,
+    "licence": "Original — generated for AIDICT (CC0)"
+  },
+  {
+    "id": "match-finished",
+    "file": "match-finished.wav",
+    "durationMs": 900,
+    "peakDbfs": -3,
+    "licence": "Original — generated for AIDICT (CC0)"
+  },
+  {
+    "id": "prediction-settled",
+    "file": "prediction-settled.wav",
+    "durationMs": 950,
+    "peakDbfs": -3,
+    "licence": "Original — generated for AIDICT (CC0)"
+  },
+  {
+    "id": "system-alert",
+    "file": "system-alert.wav",
+    "durationMs": 700,
+    "peakDbfs": -3,
+    "licence": "Original — generated for AIDICT (CC0)"
+  }
+]

@@ -1,0 +1,31 @@
+{
+  "name": "aidict-prototype",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AIDICT UI prototype — design-only, sample data. Not the production application.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5173 --strictPort",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "preview": "vite preview --port 4173",
+    "screenshots": "node scripts/screenshots.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "^1.81.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "recharts": "^3.11.1",
+    "zustand": "^5.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/react": "^19.3.3",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "playwright-core": "^1.65.1",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.4.0"
+  }
+}
