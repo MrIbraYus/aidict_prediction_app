@@ -103,3 +103,16 @@ export async function setUserAccess(targetId: string, command: AccessCommand): P
   revalidatePath('/admin/users')
   return { ok: true }
 }
+
+/** For a member who forgot their password: the admin sets a temporary one; the member changes it in Settings after signing in. */
+export async function setTemporaryPassword(targetId: string, password: string): Promise<Result> {
+  const a = await authorize(targetId)
+  if ('error' in a) return { ok: false, error: a.error }
+  const pw = z.string().min(8, 'Use at least 8 characters').max(128).safeParse(password)
+  if (!pw.success) return { ok: false, error: pw.error.issues[0].message }
+  const { error } = await a.db.auth.admin.updateUserById(a.target.id, { password: pw.data, email_confirm: true })
+  if (error) return { ok: false, error: error.message }
+  await a.db.from('notifications').insert({ user_id: a.target.id, category: 'system', title: 'Your password was reset', body: 'The AIDICT owner set a temporary password for you. Choose your own in Settings → Change password.' })
+  await audit(a.db, a.me.id, 'set_temporary_password', a.target.id)
+  return { ok: true }
+}

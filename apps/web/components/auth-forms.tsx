@@ -46,7 +46,7 @@ function ResendConfirmation({ email }: { email: string }) {
   )
 }
 
-export function SignInForm({ next, linkError, deactivated }: { next?: string; linkError?: boolean; deactivated?: boolean }) {
+export function SignInForm({ next, linkError, deactivated, created }: { next?: string; linkError?: boolean; deactivated?: boolean; created?: boolean }) {
   const [state, action, pending] = useActionState<FormState, FormData>(signIn, undefined)
   return (
     <div className="animate-fade-up">
@@ -56,6 +56,11 @@ export function SignInForm({ next, linkError, deactivated }: { next?: string; li
       {linkError && !state?.error && (
         <Notice tone="warn" className="mt-6" title="That link could not finish signing you in.">
           If you were confirming your email, it is most likely confirmed already: sign in below. Links only finish sign-in in the browser where you signed up, and they expire after an hour.
+        </Notice>
+      )}
+      {created && !state?.error && (
+        <Notice tone="success" className="mt-6" title="Account created successfully">
+          Sign in with the username or email and password you just chose. Your 3-day free trial starts now.
         </Notice>
       )}
       {deactivated && !state?.error && <Notice tone="danger" className="mt-6" title="This account has been deactivated.">Contact the AIDICT owner if you think this is a mistake.</Notice>}
@@ -98,8 +103,8 @@ export function SignUpForm() {
       <p className="mt-1.5 text-[14px] text-fg-3">Free account: match predictions, smart picks and your own saved matches.</p>
       {state?.error && <Notice tone="danger" className="mt-6" title={state.error} />}
       <div className="mt-7 space-y-4">
-        <Field label="Email or username" htmlFor="identifier">
-          <Input id="identifier" name="identifier" type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} icon={<User className="size-4" />} placeholder="you@example.com" required />
+        <Field label="Email or username" htmlFor="identifier" hint="A username can use letters, numbers, dots, dashes and underscores (3–32 characters, no spaces).">
+          <Input id="identifier" name="identifier" type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} icon={<User className="size-4" />} placeholder="e.g. john_k or you@example.com" required minLength={3} maxLength={254} />
         </Field>
         <Field label="Password" htmlFor="password" hint="At least 8 characters. Use a password you do not use anywhere else.">
           <PasswordInput id="password" name="password" autoComplete="new-password" />
@@ -131,25 +136,18 @@ export function SignUpForm() {
 }
 
 export function ForgotForm() {
-  const [state, action, pending] = useActionState<FormState, FormData>(requestReset, undefined)
-  if (state?.message) return <Sent text={state.message + ' The link expires in 1 hour.'} />
   return (
-    <form action={action} className="animate-fade-up">
+    <div className="animate-fade-up">
       <Link href="/login" className="mb-6 inline-flex items-center gap-1.5 text-[13px] font-bold text-fg-3 hover:text-fg">
         ← Back
       </Link>
-      <h2 className="text-[28px] font-extrabold tracking-[-0.01em]">Reset password</h2>
-      <p className="mt-1.5 text-[14px] text-fg-3">Enter your email and we will send a reset link. Username accounts have no mailbox: change the password in Settings while signed in.</p>
-      {state?.error && <Notice tone="danger" className="mt-6" title={state.error} />}
-      <div className="mt-7">
-        <Field label="Email" htmlFor="email">
-          <Input id="email" name="email" type="email" autoComplete="email" icon={<Mail className="size-4" />} placeholder="you@example.com" required />
-        </Field>
-      </div>
-      <Button type="submit" variant="primary" size="lg" className="mt-6 w-full" loading={pending}>
-        Send reset link
-      </Button>
-    </form>
+      <h2 className="text-[28px] font-extrabold tracking-[-0.01em]">Forgot your password?</h2>
+      <p className="mt-3 text-[14px] leading-relaxed text-fg-2">Contact the AIDICT owner. They can set a temporary password for your account.</p>
+      <p className="mt-3 text-[14px] leading-relaxed text-fg-2">After you sign in with it, choose your own new password in <b className="text-fg">Settings → Change password</b>.</p>
+      <Link href="/login" className="mt-8 inline-flex h-12 w-full items-center justify-center rounded-[14px] border border-line-strong text-[15px] font-semibold text-fg hover:bg-surface-2">
+        Back to sign in
+      </Link>
+    </div>
   )
 }
 

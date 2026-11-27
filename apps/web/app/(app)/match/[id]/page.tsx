@@ -2,7 +2,9 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { AlertTriangle, BookOpenCheck, Lock } from 'lucide-react'
-import { getFixture, getHeadToHead, getMarketStatuses, getSavedIds, getTeamResults, marketDefinitions, viewer, viewerTimeZone } from '@/lib/data'
+import { getFixture, getHeadToHead, getMarketStatuses, getMyPickKeys, getSavedIds, getTeamResults, marketDefinitions, viewer, viewerTimeZone } from '@/lib/data'
+import { topScores } from '@/lib/scores'
+import { PickButton } from '@/components/pick-button'
 import { cx, fairOdds, fmtDate, fmtTime, horizonLabel, pct, relTime } from '@/lib/format'
 import type { FixtureVM, OutcomeVM, PickVM, TeamVM } from '@/lib/types'
 import { Badge, Card, CardHeader, EmptyState, LinkTabs, Notice, PageHeader, Progress, Table, Td, Th } from '@/components/ui/primitives'
@@ -27,10 +29,13 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
   if (!Number.isInteger(id) || id <= 0) notFound()
   const sp = await searchParams
   const tab: Tab = (TABS as readonly string[]).includes(sp.tab ?? '') ? (sp.tab as Tab) : 'overview'
-  const [f, tz, saved, { admin }] = await Promise.all([getFixture(id), viewerTimeZone(), getSavedIds(), viewer()])
+  const [f, tz, saved, { admin }, mine] = await Promise.all([getFixture(id), viewerTimeZone(), getSavedIds(), viewer(), getMyPickKeys([id])])
   if (!f) notFound()
   if (tab === 'data' && !admin) notFound()
   const count = new Set(f.outcomes.map((o) => o.market)).size
+  // My Picks can be added or changed only before kick-off.
+  const open = (f.status === 'SCHEDULED' || f.status === 'TIMED') && new Date(f.kickoff).getTime() > Date.now()
+  const picks = { mine, open, fixtureId: f.id }
   return (
     <>
       <PageHeader back={{ to: '/matches', label: 'Matches' }} title={`${f.home.name} v ${f.away.name}`} eyebrow={`${f.competition.name} · ${f.season}`} actions={<SaveButton fixtureId={f.id} saved={saved.has(f.id)} variant="button" />} />
@@ -46,9 +51,9 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
           ...(admin ? [{ value: 'data', label: 'Data & model', href: `/match/${id}?tab=data` }] : []),
         ]}
       />
-      {tab === 'overview' && <Overview f={f} tz={tz} admin={admin} />}
-      {tab === 'markets' && <Markets f={f} showAll={sp.all === '1'} admin={admin} />}
-      {tab === 'prediction' && <Prediction f={f} admin={admin} />}
+      {tab === 'overview' && <Overview f={f} tz={tz} admin={admin} picks={picks} />}
+      {tab === 'markets' && <Markets f={f} showAll={sp.all === '1'} admin={admin} picks={picks} />}
+      {tab === 'prediction' && <Prediction f={f} admin={admin} picks={picks} />}
       {tab === 'form' && <Form f={f} tz={tz} />}
       {tab === 'data' && <Data f={f} tz={tz} />}
     </>
@@ -56,7 +61,9 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
 }
 
 /* ───────────── Overview ───────────── */
-async function Overview({ f, tz, admin }: { f: Detail; tz: string; admin: boolean }) {
+type PicksCtx = { mine: Record<string, string>; open: boolean; fixtureId: number }
+
+async function Overview({ f, tz, admin, picks: ctx }: { f: Detail; tz: string; admin: boolean; picks: PicksCtx }) {
   const picks = f.picks ?? []
   const s = f.snapshot
   const [homeRes, awayRes] = await Promise.all([getTeamResults(f.home.id, f.kickoff, 6), getTeamResults(f.away.id, f.kickoff, 6)])
@@ -82,7 +89,7 @@ async function Overview({ f, tz, admin }: { f: Detail; tz: string; admin: boolea
             ) : (
               <div className="space-y-2">
                 {picks.map((p) => (
-                  <PickRow key={p.id} p={p} admin={admin} />
+                  <PickRow key={p.id} p={p} admin={admin} ctx={ctx} />
                 ))}
                 {admin && s.selection?.shortfall && <p className="px-1 pt-1 text-[12px] text-fg-3">{s.selection.shortfall}</p>}
               </div>
@@ -160,7 +167,7 @@ async function Overview({ f, tz, admin }: { f: Detail; tz: string; admin: boolea
   )
 }
 
-function PickRow({ p, admin }: { p: PickVM; admin: boolean }) {
+function PickRow({ p, admin, ctx }: { p: PickVM; admin: boolean; ctx: PicksCtx }) {
   return (
     <details className="group rounded-2xl border border-line bg-surface-2/60 open:bg-surface-2">
       <summary className="flex cursor-pointer list-none items-center gap-3 px-3.5 py-3">
@@ -176,6 +183,7 @@ function PickRow({ p, admin }: { p: PickVM; admin: boolean }) {
           <div className="num text-[18px] font-bold text-fg">{pct(p.p)}</div>
           <ConfidenceBadge c={p.confidence} />
         </div>
+        <PickButton variant="icon" fixtureId={ctx.fixtureId} market={p.market} outcome={p.outcome} current={ctx.mine[`${ctx.fixtureId}|${p.market}`] ?? null} disabled={!ctx.open} />
       </summary>
       <div className="border-t border-line px-4 pb-4 pt-3 text-[12.5px] text-fg-2">
         <div className="mb-2 text-[12px] text-fg-3">
@@ -257,7 +265,7 @@ function TeamForm({ team, results, tz }: { team: TeamVM; results: FixtureVM[]; t
 }
 
 /* ───────────── All markets ───────────── */
-async function Markets({ f, showAll, admin }: { f: Detail; showAll: boolean; admin: boolean }) {
+async function Markets({ f, showAll, admin, picks: ctx }: { f: Detail; showAll: boolean; admin: boolean; picks: PicksCtx }) {
   if (!f.snapshot) return <Card><EmptyState title="Markets are published with the prediction" body="Up to 7 days before kick-off, every supported market is computed from the same score matrix." /></Card>
   const [defs, statuses] = await Promise.all([marketDefinitions(), admin ? getMarketStatuses(f.competition.id) : Promise.resolve(new Map())])
   const pickRank = new Map((f.picks ?? []).map((p) => [`${p.market}|${p.outcome}`, p.rank]))
@@ -290,6 +298,7 @@ async function Markets({ f, showAll, admin }: { f: Detail; showAll: boolean; adm
           </Link>
         </div>
       </div>
+      <CorrectScore f={f} ctx={ctx} />
       {groups.size === 0 && (
         <Card>
           <EmptyState title="No markets available as picks here yet" body="Choose All outcomes to see every probability for this match." />
@@ -319,6 +328,9 @@ async function Markets({ f, showAll, admin }: { f: Detail; showAll: boolean; adm
                           <span>base {o.base != null ? pct(o.base) : '—'}</span>
                           {rank ? <span className="font-bold text-brand-fg">Pick #{rank}</span> : <span>{o.status === 'active' ? 'available' : admin ? o.status : 'info only'}</span>}
                         </div>
+                        <div className="mt-2 flex justify-end">
+                          <PickButton fixtureId={ctx.fixtureId} market={o.market} outcome={o.outcome} current={ctx.mine[`${ctx.fixtureId}|${o.market}`] ?? null} disabled={!ctx.open} />
+                        </div>
                       </div>
                     )
                   })}
@@ -333,7 +345,7 @@ async function Markets({ f, showAll, admin }: { f: Detail; showAll: boolean; adm
 }
 
 /* ───────────── Score model ───────────── */
-function Prediction({ f, admin }: { f: Detail; admin: boolean }) {
+function Prediction({ f, admin, picks: ctx }: { f: Detail; admin: boolean; picks: PicksCtx }) {
   const s = f.snapshot
   if (!s) return <Card><EmptyState title="No prediction yet" body="The score model runs up to 7 days before kick-off." /></Card>
   const cells: { h: number; a: number; p: number }[] = []
@@ -343,15 +355,18 @@ function Prediction({ f, admin }: { f: Detail; admin: boolean }) {
   const peak = Math.max(...totals)
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-      <Card>
-        <CardHeader title="Correct-score probabilities" eyebrow={`Expected goals ${s.lambdaHome.toFixed(2)} – ${s.lambdaAway.toFixed(2)}${admin ? ` · ρ ${Number(s.inputs.rho ?? 0).toFixed(3)}` : ''}`} />
+      <div className="min-w-0 space-y-5">
+      <CorrectScore f={f} ctx={ctx} />
+      {admin && <Card>
+        <CardHeader title="Owner view · correct-score probabilities" eyebrow={`Expected goals ${s.lambdaHome.toFixed(2)} – ${s.lambdaAway.toFixed(2)}${admin ? ` · ρ ${Number(s.inputs.rho ?? 0).toFixed(3)}` : ''}`} />
         <div className="p-4">
           <ScoreMatrix matrix={s.matrix} />
         </div>
-      </Card>
+      </Card>}
+      </div>
       <div className="space-y-5">
-        <Card className="p-5">
-          <div className="eyebrow mb-3">Most likely scores</div>
+        {admin && <Card className="p-5">
+          <div className="eyebrow mb-3">Owner view · most likely scores</div>
           <div className="space-y-1.5">
             {top.map((c) => (
               <div key={`${c.h}-${c.a}`} className="flex items-center gap-3 text-[13px]">
@@ -363,7 +378,7 @@ function Prediction({ f, admin }: { f: Detail; admin: boolean }) {
               </div>
             ))}
           </div>
-        </Card>
+        </Card>}
         <Card className="p-5">
           <div className="eyebrow mb-3">Total goals</div>
           <div className="flex h-28 items-end gap-2">
@@ -398,6 +413,30 @@ function Prediction({ f, admin }: { f: Detail; admin: boolean }) {
         )}
       </div>
     </div>
+  )
+}
+
+/* ───────────── Correct score (no percentages: most likely first) ───────────── */
+function CorrectScore({ f, ctx }: { f: Detail; ctx: PicksCtx }) {
+  const s = f.snapshot
+  if (!s) return null
+  const scores = topScores(s.matrix, 12)
+  const current = ctx.mine[`${ctx.fixtureId}|correct-score`] ?? null
+  return (
+    <Card>
+      <CardHeader title="Correct score" eyebrow="Most likely first" />
+      <div className="grid grid-cols-3 gap-2 p-4 pt-3 sm:grid-cols-4">
+        {scores.map((x, i) => (
+          <PickButton key={x.key} variant="score" fixtureId={ctx.fixtureId} market="correct-score" outcome={x.key} current={current} disabled={!ctx.open}>
+            <span className="num">
+              {x.h} – {x.a}
+            </span>
+            {i === 0 && <span className="text-[10px] font-bold uppercase tracking-wider opacity-80">Most likely</span>}
+          </PickButton>
+        ))}
+      </div>
+      <p className="px-4 pb-4 text-[11px] text-fg-3">{ctx.open ? 'Tap a score to add it to My Picks.' : 'This match has started, so picks can no longer be added.'}</p>
+    </Card>
   )
 }
 

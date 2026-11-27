@@ -7,13 +7,18 @@ export const OUTCOME_LABELS: Record<string, string> = {
   "ou|over1.5": "Over 1.5 goals",
   "ou|over2.5": "Over 2.5 goals",
   "ou|over3.5": "Over 3.5 goals",
+  "ou|under1.5": "Under 1.5 goals",
+  "ou|under2.5": "Under 2.5 goals",
+  "ou|under3.5": "Under 3.5 goals",
   "btts|yes": "Both teams to score",
+  "btts|no": "Not both teams to score",
   "dc|1X": "Home or draw",
   "dc|X2": "Draw or away",
   "dc|12": "Home or away",
   "handicap|home-1": "Home −1 (wins by 2+)",
   "handicap|away+1": "Away +1 (away wins or draws)",
   "asian-handicap|home0": "Home AH 0 (draw no bet; pushes excluded)",
+  "asian-handicap|away0": "Away AH 0 (draw no bet; pushes excluded)",
   "asian-handicap|home-0.25": "Home AH −0.25 (full win)",
   "home-or-over25|yes": "Home or Over 2.5",
   "home-or-under25|yes": "Home or Under 2.5",
@@ -35,6 +40,10 @@ export const OUTCOME_LABELS: Record<string, string> = {
   "corners-ou|over9.5": "Over 9.5 corners",
   "corners-ou|over10.5": "Over 10.5 corners",
   "corners-ou|over11.5": "Over 11.5 corners",
+  "corners-ou|under8.5": "Under 8.5 corners",
+  "corners-ou|under9.5": "Under 9.5 corners",
+  "corners-ou|under10.5": "Under 10.5 corners",
+  "corners-ou|under11.5": "Under 11.5 corners",
   "corners-1x2|home": "Home more corners",
   "corners-1x2|draw": "Equal corners",
   "corners-1x2|away": "Away more corners"
@@ -42,5 +51,5 @@ export const OUTCOME_LABELS: Record<string, string> = {
 
 export function outcomeLabel(market: string, outcome: string, home: string, away: string): string {
   const t = OUTCOME_LABELS[market + '|' + outcome] ?? market + ' · ' + outcome
-  return t.replace(/Home/g, home).replace(/Away/g, away)
+  return t.replace(/\bHome\b/g, home).replace(/\bAway\b/g, away)
 }

@@ -4,6 +4,8 @@ import { cookies } from 'next/headers'
 import { createClient, createServiceClient, getUser, isAdmin } from './supabase/server'
 import { outcomeLabel } from './outcome-labels'
 import { accessFrom, type Access } from './access'
+import { settlePick, type PickResult } from './settle'
+import { topScores } from './scores'
 import type { CompetitionVM, FixtureVM, GateVM, MarketDefVM, MarketStatusVM, OutcomeVM, PickVM, SnapshotVM, TeamVM, X12 } from './types'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -346,14 +348,15 @@ export async function getPreferences() {
 /** Sidebar / top bar summary: unread count, live matches, pipeline freshness (scheduled_sync_jobs is readable by members). */
 export async function getShellInfo() {
   const sb = await createClient()
-  const [{ count: unread }, { count: live }, { data: jobs }] = await Promise.all([
+  const [{ count: unread }, { count: live }, { data: jobs }, { count: myPicks }] = await Promise.all([
     sb.from('notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
     sb.from('fixtures').select('id', { count: 'exact', head: true }).in('status', ['LIVE', 'HT']),
     sb.from('scheduled_sync_jobs').select('job,last_run_at,last_status,is_enabled').eq('is_enabled', true),
+    sb.from('user_picks').select('id,fixture:fixtures!inner(status)', { count: 'exact', head: true }).in('fixture.status', ['SCHEDULED', 'TIMED', 'LIVE', 'HT', 'POSTPONED']),
   ])
   const ran = (jobs ?? []).filter((j: Row) => j.last_run_at)
   const lastSync = (jobs ?? []).find((j: Row) => j.job === 'sync_current')?.last_run_at ?? null
-  return { unread: unread ?? 0, live: live ?? 0, lastSync, sourcesOk: ran.filter((j: Row) => j.last_status === 'success').length, sourcesTotal: ran.length }
+  return { unread: unread ?? 0, live: live ?? 0, myPicks: myPicks ?? 0, lastSync, sourcesOk: ran.filter((j: Row) => j.last_status === 'success').length, sourcesTotal: ran.length }
 }
 
 export async function getSavedFixtures(): Promise<FixtureVM[]> {
@@ -422,4 +425,76 @@ export async function getMyAccess(): Promise<Access> {
     if (count) await db.from('notifications').insert({ user_id: v.user.id, category: 'system', title: 'Your access ends soon', body: `Your ${a.plan === 'trial' ? 'free trial' : 'access'} ends in less than a day. Contact the AIDICT owner to continue.` })
   }
   return a
+}
+
+/* ───────────── My Picks ───────────── */
+export type MyPickOption = { outcome: string; label: string; p: number | null }
+export type MyPick = {
+  id: string; fixture: FixtureVM; market: string; marketName: string; outcome: string; label: string; probability: number | null
+  addedAt: string; updatedAt: string; ended: boolean; result: PickResult | null; options: MyPickOption[]
+}
+const ENDED = new Set(['FT', 'AET', 'PEN', 'AWARDED', 'CANCELLED'])
+
+/** The signed-in member's picks with match details, results after full time and the options for changing a selection. */
+export async function getMyPicks(): Promise<MyPick[]> {
+  const sb = await createClient()
+  const defs = await marketDefinitions()
+  const { data } = await sb.from('user_picks').select(`id,fixture_id,market_id,outcome_key,label,probability,added_at,updated_at,fixture:fixtures(${FIXTURE_COLS})`).order('added_at', { ascending: false }).limit(500)
+  const rows = (data ?? []).filter((r: Row) => r.fixture)
+  const fids = [...new Set(rows.map((r: Row) => r.fixture_id as number))]
+  const endedIds = rows.filter((r: Row) => ENDED.has(r.fixture.status)).map((r: Row) => r.fixture_id as number)
+  const openIds = fids.filter((id) => !endedIds.includes(id))
+  // Settlement facts for finished matches: corners and goal order.
+  const corners = new Map<number, Map<number, number>>()
+  const seqs = new Map<number, string>()
+  if (endedIds.length) {
+    const [{ data: st }, { data: goals }] = await Promise.all([
+      sb.from('match_statistics').select('fixture_id,team_id,value').eq('stat_key', 'corners').in('fixture_id', endedIds),
+      sb.from('goal_events').select('fixture_id,team_id,minute,stoppage,id').in('fixture_id', endedIds).order('minute').order('stoppage', { nullsFirst: true }).order('id'),
+    ])
+    for (const s of st ?? []) corners.set(s.fixture_id, (corners.get(s.fixture_id) ?? new Map()).set(s.team_id, Number(s.value)))
+    const homeOf = new Map(rows.map((r: Row) => [r.fixture_id, r.fixture.home.id]))
+    for (const g of goals ?? []) seqs.set(g.fixture_id, (seqs.get(g.fixture_id) ?? '') + (g.team_id === homeOf.get(g.fixture_id) ? 'H' : 'A'))
+  }
+  // Edit options for open matches: latest prediction per match.
+  const snaps = await snapshotsFor(openIds)
+  const optionRows = new Map<string, MyPickOption[]>()
+  const snapIds = [...snaps.values()].map((s) => s.id)
+  if (snapIds.length) {
+    const markets = [...new Set(rows.map((r: Row) => r.market_id as string))].filter((m) => m !== 'correct-score')
+    const { data: probs } = markets.length ? await sb.from('market_outcome_probabilities').select('snapshot_id,market_id,outcome_key,probability').in('snapshot_id', snapIds).in('market_id', markets) : { data: [] }
+    const fixtureOfSnap = new Map([...snaps.entries()].map(([fid, s]) => [s.id, fid]))
+    for (const p of probs ?? []) {
+      const k = `${fixtureOfSnap.get(p.snapshot_id)}|${p.market_id}`
+      optionRows.set(k, [...(optionRows.get(k) ?? []), { outcome: p.outcome_key, label: '', p: Number(p.probability) }])
+    }
+  }
+  return rows.map((r: Row) => {
+    const f = fixture(r.fixture)
+    const ended = ENDED.has(f.status)
+    const cm = corners.get(r.fixture_id)
+    const facts = { ft: f.final && f.score ? f.score : null, corners: cm && cm.size === 2 ? [cm.get(f.home.id) ?? 0, cm.get(f.away.id) ?? 0] as [number, number] : null, seq: seqs.get(r.fixture_id) ?? null }
+    let options: MyPickOption[] = []
+    if (!ended) {
+      if (r.market_id === 'correct-score') {
+        const s = snaps.get(r.fixture_id)
+        options = s ? topScores(s.matrix, 16).map((x) => ({ outcome: x.key, label: `Correct score ${x.h}–${x.a}`, p: null })) : []
+      } else {
+        options = (optionRows.get(`${r.fixture_id}|${r.market_id}`) ?? []).map((o) => ({ ...o, label: outcomeLabel(r.market_id, o.outcome, f.home.short, f.away.short) }))
+      }
+    }
+    return {
+      id: r.id, fixture: f, market: r.market_id, marketName: defs.get(r.market_id)?.name ?? r.market_id, outcome: r.outcome_key, label: r.label,
+      probability: r.probability != null ? Number(r.probability) : null, addedAt: r.added_at, updatedAt: r.updated_at, ended,
+      result: f.status === 'CANCELLED' ? 'void' : ended ? settlePick(r.market_id, r.outcome_key, facts) : null, options,
+    }
+  })
+}
+
+/** Which outcome the member has picked per match and market, for the add/remove buttons. */
+export async function getMyPickKeys(fixtureIds: number[]): Promise<Record<string, string>> {
+  if (!fixtureIds.length) return {}
+  const sb = await createClient()
+  const { data } = await sb.from('user_picks').select('fixture_id,market_id,outcome_key').in('fixture_id', fixtureIds)
+  return Object.fromEntries((data ?? []).map((r: Row) => [`${r.fixture_id}|${r.market_id}`, r.outcome_key]))
 }

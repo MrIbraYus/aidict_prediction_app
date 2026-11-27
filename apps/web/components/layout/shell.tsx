@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  BarChart3, Bell, BookOpen, ChevronsLeft, Database, HeartHandshake, History, Info, LayoutDashboard, ListChecks, ListOrdered, LogOut, Menu, Search,
+  BarChart3, Bell, Bookmark, BookOpen, ChevronsLeft, Database, HeartHandshake, History, Info, LayoutDashboard, ListChecks, ListOrdered, LogOut, Menu, Search,
   Clock, Settings, ShieldCheck, Star, User, Users, Zap,
 } from 'lucide-react'
 import { cx, relTime } from '@/lib/format'
@@ -13,7 +13,7 @@ import { ThemeToggle } from './theme-toggle'
 import { NotificationWatcher } from './notification-watcher'
 
 type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; badge?: ReactNode; admin?: boolean }
-export type ShellInfo = { email: string; admin: boolean; unread: number; live: number; lastSync: string | null; sourcesOk: number; sourcesTotal: number; tz: string; access: { label: string; warn: boolean } | null }
+export type ShellInfo = { email: string; admin: boolean; unread: number; live: number; myPicks: number; lastSync: string | null; sourcesOk: number; sourcesTotal: number; tz: string; access: { label: string; warn: boolean } | null }
 
 function nav(info: ShellInfo): { group: string; items: NavItem[] }[] {
   return [
@@ -23,6 +23,7 @@ function nav(info: ShellInfo): { group: string; items: NavItem[] }[] {
         { to: '/', label: 'Dashboard', icon: LayoutDashboard },
         { to: '/matches', label: 'Matches', icon: ListOrdered, badge: info.live ? <span className="num rounded-md bg-live px-1.5 text-[11px] font-bold text-[#04140a]">{info.live}</span> : undefined },
         { to: '/markets', label: 'Smart Picks', icon: ListChecks },
+        { to: '/my-picks', label: 'My Picks', icon: Bookmark, badge: info.myPicks ? <span className="num rounded-md bg-brand px-1.5 text-[11px] font-bold text-white">{info.myPicks}</span> : undefined },
       ],
     },
     {
@@ -240,9 +241,9 @@ function MobileNav({ onMore }: { onMore: () => void }) {
   const path = usePathname()
   const items = [
     { to: '/matches', label: 'Matches', icon: ListOrdered },
-    { to: '/markets', label: 'Picks', icon: ListChecks },
+    { to: '/markets', label: 'Smart', icon: ListChecks },
     { to: '/', label: 'Home', icon: Zap },
-    { to: '/history', label: 'History', icon: History },
+    { to: '/my-picks', label: 'My Picks', icon: Bookmark },
   ]
   return (
     <nav className="fixed inset-x-3 bottom-3 z-40 pb-[env(safe-area-inset-bottom)] lg:hidden" aria-label="Primary">

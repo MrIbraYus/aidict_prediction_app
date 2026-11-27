@@ -206,3 +206,22 @@
 :root:not([data-aidict-theme='light']) .crest-outline img {
   filter: drop-shadow(0 0 0.75px rgba(255, 255, 255, 0.95)) drop-shadow(0 0 0.75px rgba(255, 255, 255, 0.75));
 }
+
+/* Phones: feel like an app. iOS zooms into any field under 16px, so every field is 16px on small screens;
+   double-tap zoom and the rubber-band bounce are switched off. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+html,
+body {
+  overscroll-behavior: none;
+}
+@media (max-width: 1023px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

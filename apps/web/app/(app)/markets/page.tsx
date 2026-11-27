@@ -1,7 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ListChecks } from 'lucide-react'
-import { getFixtures, getGates, viewer, viewerTimeZone } from '@/lib/data'
+import { getFixtures, getGates, getMyPickKeys, viewer, viewerTimeZone } from '@/lib/data'
+import { PickButton } from '@/components/pick-button'
 import { cx, FAMILY_LABEL, fmtDate, fmtDay, fmtTime, FLAG_BY_CODE, marketFamily, pct, type MarketFamily } from '@/lib/format'
 import type { FixtureVM, PickVM } from '@/lib/types'
 import { Badge, Card, CardHeader, EmptyState, Notice, PageHeader, Table, Td, Th } from '@/components/ui/primitives'
@@ -18,6 +19,7 @@ export default async function SmartPicksPage({ searchParams }: { searchParams: P
   const tz = await viewerTimeZone()
   const [fixtures, gates] = await Promise.all([getFixtures({ from: new Date().toISOString(), to: new Date(Date.now() + 8 * 86400000).toISOString(), withPicks: true, competition: sp.c }), (await viewer()).admin ? getGates() : Promise.resolve([])])
   const admin = (await viewer()).admin
+  const mine = await getMyPickKeys(fixtures.map((f) => f.id))
   const conf = sp.conf === 'High' || sp.conf === 'Medium' ? sp.conf : undefined
   const family = FAMILIES.includes(sp.t as MarketFamily) ? (sp.t as MarketFamily) : undefined
   const noResult = sp.nr === '1' && !family
@@ -133,6 +135,7 @@ export default async function SmartPicksPage({ searchParams }: { searchParams: P
                       </div>
                       <span className="num text-[16px] font-bold">{pct(p.p)}</span>
                       <ConfidenceBadge c={p.confidence} />
+                      <PickButton variant="icon" fixtureId={f.id} market={p.market} outcome={p.outcome} current={mine[`${f.id}|${p.market}`] ?? null} disabled={new Date(f.kickoff).getTime() <= Date.now()} />
                     </div>
                   ))}
                 </div>
