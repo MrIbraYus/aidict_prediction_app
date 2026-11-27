@@ -12,7 +12,7 @@ from aidict_data.db import Repo, connect
 
 from ..backtest import Config, run, summarize
 from ..history import BACKTEST_LEAGUES, load, seasons_between
-from ..market_eval import SPECS, evaluate, fit_calibrators
+from ..market_eval import SPECS, evaluate, evaluate_corners, fit_calibrators, fit_corner_calibrators
 
 UNVERIFIED_SETTLEMENT = {"1x2-1up", "1x2-2up", "1x2-never-down", "dc-1up"}
 GOAL_ORDER_COMPS = {"BL1"}
@@ -33,9 +33,10 @@ def evaluate_competition(code: str, log=print):
         return None
     bt = run(df, Config(test_from="2019-20"))
     last = bt.season.max()
-    current = evaluate(bt, df)
-    previous = evaluate(bt[bt.season < last].reset_index(drop=True), df[df.season < last].reset_index(drop=True))
-    calib = fit_calibrators(bt)
+    prev_bt, prev_df = bt[bt.season < last].reset_index(drop=True), df[df.season < last].reset_index(drop=True)
+    current = evaluate(bt, df) + evaluate_corners(bt, df)
+    previous = evaluate(prev_bt, prev_df) + evaluate_corners(prev_bt, prev_df)
+    calib = {**fit_calibrators(bt), **fit_corner_calibrators(bt)}
     return {"df": df, "bt": bt, "stats": stats, "summary": summarize(bt), "current": current, "previous": previous, "calib": calib}
 
 
@@ -115,7 +116,7 @@ def mark_unmodelled(repo: Repo, log=print) -> None:
             if d["category"] == "player":
                 st, why = "unavailable", "Needs confirmed line-ups, player minutes and penalty takers — not available on free sources"
             elif d["category"] == "corners":
-                st, why = "validating", "Corners model not built yet (football-data.co.uk history available)"
+                st, why = "validating", "No corner-count history for this competition (football-data.co.uk covers league files only)"
             elif "goal_times" in (d["required_data"] or []) and c["code"] not in GOAL_ORDER_COMPS:
                 st, why = "unavailable", "No goal-order data for this competition on free sources"
             elif c["code"] in ("CL", "BSA", "WC"):
@@ -125,7 +126,7 @@ def mark_unmodelled(repo: Repo, log=print) -> None:
             repo.run("insert into market_competition_status (market_id, competition_id, status, reason, evaluated_at) values (%s, %s, %s, %s, now())", (d["id"], c["id"], st, why))
 
 
-MODEL_VERSION = "1.0.1"  # 1.0.1: snapshot schedule T-7d preview → T-24h → T-2h (model maths unchanged from 1.0.0)
+MODEL_VERSION = "1.1.0"  # 1.1.0: goals blended with shots-on-target ratings (w = 0.5) + corners markets; 1.0.1: T-7d/T-24h/T-2h schedule
 
 
 def ensure_model(repo: Repo) -> None:
@@ -134,7 +135,8 @@ def ensure_model(repo: Repo) -> None:
     repo.run("""insert into model_versions (model_id, version, trained_at, params, status) values ('football-dc', %s, now(), %s, 'active')
                 on conflict (model_id, version) do update set status = 'active'""",
              (MODEL_VERSION, json.dumps({"xi": 0.0019, "window_days": 1095, "l2": 1.0, "promoted_prior": [-0.25, 0.2], "calibration": "platt",
-                                         "horizons": ["T-7d", "T-24h", "T-2h"]})))
+                                         "horizons": ["T-7d", "T-24h", "T-2h"], "shots_weight": 0.5,
+                                         "corners": "negative binomial on corner ratings"})))
 
 
 def main(argv=None):

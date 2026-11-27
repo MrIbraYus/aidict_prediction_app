@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { ListChecks, Sparkles } from 'lucide-react'
-import { getBacktestRuns, getCompetitions, getFixtures, getSavedIds, viewerTimeZone } from '@/lib/data'
+import { getBacktestRuns, getCompetitions, getFixtures, getSavedIds, viewer, viewerTimeZone } from '@/lib/data'
 import { summarizeRun } from '@/lib/runs'
 import { cx, dayKey, fmtLong, fmtTime, FLAG_BY_CODE, pct } from '@/lib/format'
 import type { FixtureVM, PickVM } from '@/lib/types'
@@ -24,11 +24,12 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const from = new Date(new Date(day + 'T00:00:00Z').getTime() - 14 * 3600_000).toISOString()
   const to = new Date(new Date(day + 'T00:00:00Z').getTime() + 38 * 3600_000).toISOString()
   const soon = new Date(Date.now() + 4 * 86400000).toISOString()
+  const { admin } = await viewer()
   const [raw, upcoming, comps, runs, saved] = await Promise.all([
     getFixtures({ from, to, competition: comp, withPicks: true }),
     getFixtures({ from: new Date().toISOString(), to: soon, withPicks: true, limit: 200 }),
     getCompetitions(),
-    getBacktestRuns(),
+    admin ? getBacktestRuns() : Promise.resolve([]),
     getSavedIds(),
   ])
   const list = raw.filter((f) => dayKey(f.kickoff, tz) === day)
@@ -99,9 +100,9 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
         <div className="min-w-0 space-y-5">
           <Card>
-            <CardHeader title="Smart Picks" icon={<ListChecks className="size-4 text-brand-fg" />} eyebrow="Next 4 days · ranked by score" action={<Link href="/markets" className="text-[12px] font-bold text-brand-fg">All →</Link>} />
+            <CardHeader title="Smart Picks" icon={<ListChecks className="size-4 text-brand-fg" />} eyebrow="Next 4 days · strongest first" action={<Link href="/markets" className="text-[12px] font-bold text-brand-fg">All →</Link>} />
             {topPicks.length === 0 ? (
-              <EmptyState title="No picks yet" body="Picks appear up to 7 days before kick-off, and only for outcomes that passed backtesting and calibration checks." />
+              <EmptyState title="No picks yet" body="Picks appear up to 7 days before kick-off, when the evidence for an outcome is strong enough." />
             ) : (
               <div className="space-y-1 p-3">
                 {topPicks.map(({ f, p }) => (
@@ -119,12 +120,12 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                     </div>
                   </Link>
                 ))}
-                <p className="px-2.5 pt-1 text-[11px] text-fg-3">Ring = reliability score (calibration, sample size, data completeness, coverage).</p>
+                {admin && <p className="px-2.5 pt-1 text-[11px] text-fg-3">Owner view · ring = reliability score (calibration, sample size, data completeness, coverage).</p>}
               </div>
             )}
           </Card>
 
-          <Card>
+          {admin && <Card>
             <CardHeader title="Model vs benchmarks" eyebrow="Walk-forward backtest · 1X2 log loss (lower is better)" action={<Link href="/performance" className="text-[12px] font-bold text-brand-fg">Details →</Link>} />
             {runs.length === 0 ? (
               <EmptyState title="No backtest stored yet" body="Run the weekly backtest job to publish model-quality numbers here." />
@@ -153,7 +154,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                 <p className="pt-1 text-[11px] text-fg-3">Closing bookmaker odds remain the stronger benchmark; AIDICT reports that openly.</p>
               </div>
             )}
-          </Card>
+          </Card>}
         </div>
       </div>
     </>

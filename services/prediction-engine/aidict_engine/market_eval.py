@@ -17,7 +17,7 @@ import pandas as pd
 from scipy.special import logit
 from sklearn.linear_model import LogisticRegression
 
-from . import dixon_coles
+from . import corners, dixon_coles, goals
 from .markets import asian, btts, combined, first_goal, handicap_3way, one_x_two, order_stats, over
 from .metrics import binary_brier, binary_log_loss, bootstrap_diff, ece
 
@@ -131,7 +131,7 @@ def _gate(n, ci, ece_v, max_ece):
 
 def evaluate(bt: pd.DataFrame, history: pd.DataFrame) -> list[dict]:
     """`bt`: walk-forward rows (season, kickoff, gh, ga, lam_h, lam_a, rho, goal_seq). `history`: all matches incl. training seasons."""
-    mats = [dixon_coles.score_matrix(r.lam_h, r.lam_a, r.rho) for r in bt.itertuples()]
+    mats = [goals.row_matrix(r) for r in bt.itertuples()]
     seasons = sorted(bt.season.unique())
     season_start = {s: bt[bt.season == s].kickoff.min() for s in seasons}
     hist_seq = history.get("goal_seq")
@@ -156,32 +156,14 @@ def evaluate(bt: pd.DataFrame, history: pd.DataFrame) -> list[dict]:
             mask_hist = hvalid & (history.kickoff < season_start[s]).to_numpy()  # tz-aware comparison
             rate = float(hy[mask_hist].astype(float).mean()) if mask_hist.any() else float(yv.mean())
             base[sv == s] = rate
-        # Out-of-fold Platt calibration: season k is calibrated with a model fitted on test seasons < k only.
-        cal = np.full(len(pv), np.nan)
-        lp = logit(np.clip(pv, 1e-4, 1 - 1e-4)).reshape(-1, 1)
-        for i, s in enumerate(seasons):
-            prior = np.isin(sv, seasons[:i])
-            if prior.sum() >= 300 and 0 < yv[prior].mean() < 1:
-                lr = LogisticRegression(C=10.0).fit(lp[prior], yv[prior])
-                cal[sv == s] = lr.predict_proba(lp[sv == s])[:, 1]
-        raw_ci = bootstrap_diff(_bin_ll(pv, yv), _bin_ll(base, yv))
-        raw = {"n": int(valid.sum()), "mean_p": float(pv.mean()), "observed": float(yv.mean()), "brier": binary_brier(pv, yv), "log_loss": binary_log_loss(np.clip(pv, 1e-6, 1 - 1e-6), yv),
-               "base_log_loss": float(_bin_ll(base, yv).mean()), "ece": ece(pv, yv), "ci": raw_ci, "gate": _gate(int(valid.sum()), raw_ci, ece(pv, yv), spec.binary_gate)}
-        cm = ~np.isnan(cal)
-        calibrated = None
-        if cm.sum() >= 200:
-            c_ci = bootstrap_diff(_bin_ll(cal[cm], yv[cm]), _bin_ll(base[cm], yv[cm]))
-            c_ece = ece(cal[cm], yv[cm])
-            calibrated = {"n": int(cm.sum()), "log_loss": binary_log_loss(cal[cm], yv[cm]), "raw_log_loss_same_rows": binary_log_loss(np.clip(pv[cm], 1e-6, 1 - 1e-6), yv[cm]),
-                          "base_log_loss": float(_bin_ll(base[cm], yv[cm]).mean()), "ece": c_ece, "raw_ece_same_rows": ece(pv[cm], yv[cm]), "ci": c_ci,
-                          "gate": _gate(int(cm.sum()), c_ci, c_ece, spec.binary_gate)}
+        raw, calibrated = _assess(pv, yv, sv, base, spec.binary_gate, seasons)
         out.append({"market": spec.market, "outcome": spec.outcome, "label": spec.label, "needs_order": spec.needs_order, "raw": raw, "calibrated": calibrated})
     return out
 
 
 def fit_calibrators(bt: pd.DataFrame) -> dict[tuple[str, str], tuple[float, float, int]]:
     """Platt parameters (a, b, n) per outcome fitted on every walk-forward out-of-sample prediction; p' = σ(a·logit p + b)."""
-    mats = [dixon_coles.score_matrix(r.lam_h, r.lam_a, r.rho) for r in bt.itertuples()]
+    mats = [goals.row_matrix(r) for r in bt.itertuples()]
     seqs = bt.goal_seq if "goal_seq" in bt else pd.Series([None] * len(bt))
     out = {}
     for spec in SPECS:
@@ -205,3 +187,70 @@ def apply_calibration(p: float, params: tuple[float, float, int] | None) -> floa
     a, b, _ = params
     z = a * float(logit(np.clip(p, 1e-4, 1 - 1e-4))) + b
     return float(1 / (1 + np.exp(-z)))
+
+
+def _assess(pv: np.ndarray, yv: np.ndarray, sv: np.ndarray, base: np.ndarray, max_ece: float, seasons: list) -> tuple[dict, dict | None]:
+    """Raw metrics, out-of-fold Platt calibration and the publication gate for one binary outcome."""
+    # Out-of-fold Platt calibration: season k is calibrated with a model fitted on test seasons < k only.
+    cal = np.full(len(pv), np.nan)
+    lp = logit(np.clip(pv, 1e-4, 1 - 1e-4)).reshape(-1, 1)
+    for i, s in enumerate(seasons):
+        prior = np.isin(sv, seasons[:i])
+        if prior.sum() >= 300 and 0 < yv[prior].mean() < 1:
+            lr = LogisticRegression(C=10.0).fit(lp[prior], yv[prior])
+            cal[sv == s] = lr.predict_proba(lp[sv == s])[:, 1]
+    raw_ci = bootstrap_diff(_bin_ll(pv, yv), _bin_ll(base, yv))
+    raw = {"n": len(yv), "mean_p": float(pv.mean()), "observed": float(yv.mean()), "brier": binary_brier(pv, yv), "log_loss": binary_log_loss(np.clip(pv, 1e-6, 1 - 1e-6), yv),
+           "base_log_loss": float(_bin_ll(base, yv).mean()), "ece": ece(pv, yv), "ci": raw_ci, "gate": _gate(len(yv), raw_ci, ece(pv, yv), max_ece)}
+    cm = ~np.isnan(cal)
+    calibrated = None
+    if cm.sum() >= 200:
+        c_ci = bootstrap_diff(_bin_ll(cal[cm], yv[cm]), _bin_ll(base[cm], yv[cm]))
+        c_ece = ece(cal[cm], yv[cm])
+        calibrated = {"n": int(cm.sum()), "log_loss": binary_log_loss(cal[cm], yv[cm]), "raw_log_loss_same_rows": binary_log_loss(np.clip(pv[cm], 1e-6, 1 - 1e-6), yv[cm]),
+                      "base_log_loss": float(_bin_ll(base[cm], yv[cm]).mean()), "ece": c_ece, "raw_ece_same_rows": ece(pv[cm], yv[cm]), "ci": c_ci,
+                      "gate": _gate(int(cm.sum()), c_ci, c_ece, max_ece)}
+    return raw, calibrated
+
+
+def evaluate_corners(bt: pd.DataFrame, history: pd.DataFrame) -> list[dict]:
+    """Corner outcomes, judged exactly like score-matrix outcomes (same base rate rule, calibration and gate)."""
+    if "lc_h" not in bt:
+        return [{"market": s.market, "outcome": s.outcome, "label": s.label, "n": 0, "note": "No corner data"} for s in corners.SPECS]
+    rows = bt[bt.lc_h.notna() & bt.cor_k.notna() & bt.cor_h.notna() & bt.cor_a.notna()].reset_index(drop=True)
+    probs = [corners.probabilities(r.lc_h, r.lc_a, r.cor_k) for r in rows.itertuples()]
+    seasons = sorted(rows.season.unique())
+    hist = history[history.cor_h.notna() & history.cor_a.notna()] if "cor_h" in history else history.iloc[:0]
+    out = []
+    for spec in corners.SPECS:
+        if len(rows) < 300:
+            out.append({"market": spec.market, "outcome": spec.outcome, "label": spec.label, "n": len(rows), "note": "Too few matches with corner data"})
+            continue
+        pv = np.array([pr[(spec.market, spec.outcome)] for pr in probs])
+        yv = np.array([spec.settle(h, a) for h, a in zip(rows.cor_h, rows.cor_a)], float)
+        sv = rows.season.values
+        hy = np.array([spec.settle(h, a) for h, a in zip(hist.cor_h, hist.cor_a)], float)
+        base = np.empty(len(pv))
+        for s_ in seasons:
+            start = rows[rows.season == s_].kickoff.min()
+            m = (hist.kickoff < start).to_numpy()
+            base[sv == s_] = float(hy[m].mean()) if m.any() else float(yv.mean())
+        raw, calibrated = _assess(pv, yv, sv, base, spec.binary_gate, seasons)
+        out.append({"market": spec.market, "outcome": spec.outcome, "label": spec.label, "needs_order": False, "raw": raw, "calibrated": calibrated})
+    return out
+
+
+def fit_corner_calibrators(bt: pd.DataFrame) -> dict[tuple[str, str], tuple[float, float, int]]:
+    if "lc_h" not in bt:
+        return {}
+    rows = bt[bt.lc_h.notna() & bt.cor_k.notna() & bt.cor_h.notna() & bt.cor_a.notna()]
+    probs = [corners.probabilities(r.lc_h, r.lc_a, r.cor_k) for r in rows.itertuples()]
+    out = {}
+    for spec in corners.SPECS:
+        yv = np.array([spec.settle(h, a) for h, a in zip(rows.cor_h, rows.cor_a)], float)
+        if len(yv) < 300 or not 0 < yv.mean() < 1:
+            continue
+        lp = logit(np.clip(np.array([pr[(spec.market, spec.outcome)] for pr in probs]), 1e-4, 1 - 1e-4)).reshape(-1, 1)
+        lr = LogisticRegression(C=10.0).fit(lp, yv)
+        out[(spec.market, spec.outcome)] = (float(lr.coef_[0][0]), float(lr.intercept_[0]), len(yv))
+    return out

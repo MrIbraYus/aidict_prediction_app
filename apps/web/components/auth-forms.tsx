@@ -46,23 +46,24 @@ function ResendConfirmation({ email }: { email: string }) {
   )
 }
 
-export function SignInForm({ next, linkError }: { next?: string; linkError?: boolean }) {
+export function SignInForm({ next, linkError, deactivated }: { next?: string; linkError?: boolean; deactivated?: boolean }) {
   const [state, action, pending] = useActionState<FormState, FormData>(signIn, undefined)
   return (
     <div className="animate-fade-up">
     <form action={action}>
       <h2 className="text-[28px] font-extrabold tracking-[-0.01em]">Sign in</h2>
-      <p className="mt-1.5 text-[14px] text-fg-3">Private workspace — access is by invitation.</p>
+      <p className="mt-1.5 text-[14px] text-fg-3">Welcome back. Sign in to see today’s predictions.</p>
       {linkError && !state?.error && (
         <Notice tone="warn" className="mt-6" title="That link could not finish signing you in.">
           If you were confirming your email, it is most likely confirmed already: sign in below. Links only finish sign-in in the browser where you signed up, and they expire after an hour.
         </Notice>
       )}
+      {deactivated && !state?.error && <Notice tone="danger" className="mt-6" title="This account has been deactivated.">Contact the AIDICT owner if you think this is a mistake.</Notice>}
       {state?.error && <Notice tone="danger" className="mt-6" title={state.error}>{state.unconfirmed ? 'Open the link in the confirmation email, or send a new one.' : undefined}</Notice>}
       <input type="hidden" name="next" value={next ?? '/'} />
       <div className="mt-7 space-y-4">
         <Field label="Email or username" htmlFor="identifier">
-          <Input id="identifier" name="identifier" type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} icon={<User className="size-4" />} placeholder="admin or you@example.com" required />
+          <Input id="identifier" name="identifier" type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} icon={<User className="size-4" />} placeholder="you@example.com" required />
         </Field>
         <Field label="Password" htmlFor="password">
           <PasswordInput id="password" name="password" autoComplete="current-password" minLength={1} />
@@ -77,9 +78,9 @@ export function SignInForm({ next, linkError }: { next?: string; linkError?: boo
         Sign in
       </Button>
       <p className="mt-6 text-center text-[13px] text-fg-3">
-        New workspace?{' '}
+        New to AIDICT?{' '}
         <Link href="/signup" className="font-bold text-fg hover:underline">
-          Create the owner account
+          Create a free account
         </Link>
       </p>
     </form>
@@ -94,11 +95,11 @@ export function SignUpForm() {
   return (
     <form action={action} className="animate-fade-up">
       <h2 className="text-[28px] font-extrabold tracking-[-0.01em]">Create account</h2>
-      <p className="mt-1.5 text-[14px] text-fg-3">The first account becomes the workspace owner and is ready immediately. After that, sign-up stays closed unless the owner opens it.</p>
+      <p className="mt-1.5 text-[14px] text-fg-3">Free account: match predictions, smart picks and your own saved matches.</p>
       {state?.error && <Notice tone="danger" className="mt-6" title={state.error} />}
       <div className="mt-7 space-y-4">
         <Field label="Email or username" htmlFor="identifier">
-          <Input id="identifier" name="identifier" type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} icon={<User className="size-4" />} placeholder="admin or you@example.com" required />
+          <Input id="identifier" name="identifier" type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} icon={<User className="size-4" />} placeholder="you@example.com" required />
         </Field>
         <Field label="Password" htmlFor="password" hint="At least 8 characters. Use a password you do not use anywhere else.">
           <PasswordInput id="password" name="password" autoComplete="new-password" />

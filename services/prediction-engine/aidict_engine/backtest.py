@@ -8,7 +8,7 @@ from datetime import timedelta
 import numpy as np
 import pandas as pd
 
-from . import dixon_coles
+from . import corners, dixon_coles, goals
 from .ratings import fit_counts
 from .elo import Elo, OrderedLogit
 from .markets import btts, one_x_two, over
@@ -74,9 +74,13 @@ def run(matches: pd.DataFrame, cfg: Config) -> pd.DataFrame:
                 conv = (float((w * st.gh).sum() / (w * st.sot_h).sum()), float((w * st.ga).sum() / (w * st.sot_a).sum()))
             cor_model, _ = _count_model(train, "cor_h", "cor_a", cutoff, cfg, prior)
             if cor_model is not None and week_k is None:
-                week_k = _dispersion(cor_model, train)
+                week_k = corners.dispersion(cor_model, list(train[train.cor_h.notna() & train.cor_a.notna()].tail(760).itertuples()))
             for _, r in wk.iterrows():
-                m = model.matrix(r.home, r.away)
+                lsh = lsa = None
+                if sot_model is not None:
+                    sh, sa = sot_model.rates(r.home, r.away)
+                    lsh, lsa = sh * conv[0], sa * conv[1]  # expected goals implied by expected shots on target
+                m = dixon_coles.score_matrix(*goals.blend(*model.rates(r.home, r.away), lsh, lsa), model.rho)  # production model
                 ph, pd_, pa = one_x_two(m)
                 lh, la = model.rates(r.home, r.away)
                 eh, ed, ea = ol.predict(np.array([r.elo_diff]))[0]
@@ -88,9 +92,8 @@ def run(matches: pd.DataFrame, cfg: Config) -> pd.DataFrame:
                 row["goal_seq"] = r.get("goal_seq") if isinstance(r.get("goal_seq"), str) else None
                 for k in ("sot_h", "sot_a", "cor_h", "cor_a"):
                     row[k] = r.get(k, np.nan)
-                if sot_model is not None:
-                    sh, sa = sot_model.rates(r.home, r.away)
-                    row["lam_sh"], row["lam_sa"] = sh * conv[0], sa * conv[1]  # expected goals implied by expected shots on target
+                if lsh is not None:
+                    row["lam_sh"], row["lam_sa"] = lsh, lsa
                 if cor_model is not None:
                     row["lc_h"], row["lc_a"] = cor_model.rates(r.home, r.away)
                     row["cor_k"] = week_k
@@ -115,19 +118,6 @@ def _count_model(train: pd.DataFrame, hcol: str, acol: str, cutoff, cfg: "Config
     age = (cutoff - t.kickoff).dt.total_seconds().values / 86400
     m = fit_counts(list(t.home), list(t.away), t[hcol].values, t[acol].values, age, cfg.xi, cfg.l2, prior)
     return m, None
-
-
-def _dispersion(model, train: pd.DataFrame) -> float:
-    """Negative-binomial size k for per-team corner counts (var = mu + mu^2 / k), by method of moments."""
-    t = train[train.cor_h.notna() & train.cor_a.notna()].tail(760)
-    mu, y = [], []
-    for r in t.itertuples():
-        h, a = model.rates(r.home, r.away)
-        mu += [h, a]
-        y += [r.cor_h, r.cor_a]
-    mu, y = np.array(mu), np.array(y)
-    excess = float(((y - mu) ** 2 - mu).sum())
-    return float(np.clip((mu ** 2).sum() / excess, 2.0, 500.0)) if excess > 0 else 500.0
 
 
 def summarize(bt: pd.DataFrame) -> dict:

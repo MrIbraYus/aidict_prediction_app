@@ -96,3 +96,12 @@ export async function setSignupOpen(open: boolean): Promise<{ ok: boolean; error
   revalidatePath('/admin')
   return { ok: true }
 }
+
+/** Unread count and newest unread notification for the signed-in user (RLS: own rows only). Used by the live watcher. */
+export async function unreadSummary(): Promise<{ count: number; latest: { id: number; title: string; category: string } | null }> {
+  const user = await getUser()
+  if (!user) return { count: 0, latest: null }
+  const sb = await createClient()
+  const { data, count } = await sb.from('notifications').select('id,title,category', { count: 'exact' }).is('read_at', null).order('created_at', { ascending: false }).limit(1)
+  return { count: count ?? 0, latest: data?.[0] ?? null }
+}

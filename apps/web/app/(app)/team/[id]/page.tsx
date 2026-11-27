@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
-import { getSavedIds, getTeam, viewerTimeZone } from '@/lib/data'
+import { getSavedIds, getTeam, viewer, viewerTimeZone } from '@/lib/data'
 import { Card, CardHeader, PageHeader } from '@/components/ui/primitives'
 import { isDone, MatchRow } from '@/components/sports/match'
 import { Crest, FormPills } from '@/components/sports/identity'
@@ -15,7 +15,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function TeamPage({ params }: { params: Promise<{ id: string }> }) {
   const id = Number((await params).id)
   if (!Number.isInteger(id) || id <= 0) notFound()
-  const [data, tz, saved] = await Promise.all([getTeam(id), viewerTimeZone(), getSavedIds()])
+  const [data, tz, saved, { admin }] = await Promise.all([getTeam(id), viewerTimeZone(), getSavedIds(), viewer()])
   if (!data) notFound()
   const { team, badge, fixtures } = data
   const played = fixtures.filter((f) => isDone(f) && f.score)
@@ -37,7 +37,7 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
               <FormPills form={form} />
             </div>
           )}
-          {badge?.source_url && <div className="mt-2 text-[11px] text-fg-3">Badge source: {new URL(badge.source_url).hostname}</div>}
+          {admin && badge?.source_url && <div className="mt-2 text-[11px] text-fg-3">Badge source: {new URL(badge.source_url).hostname}</div>}
         </div>
       </Card>
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">

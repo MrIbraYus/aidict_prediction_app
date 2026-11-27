@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { notFound } from 'next/navigation'
 import { getProvidersStatus } from '@/lib/data'
 import { relTime } from '@/lib/format'
 import { getUser, isAdmin } from '@/lib/supabase/server'
@@ -16,11 +17,13 @@ const JOB_LABEL: Record<string, string> = {
 }
 
 export default async function ProvidersPage() {
-  const [{ providers, jobs, logs }, user] = await Promise.all([getProvidersStatus(), getUser()])
-  const admin = isAdmin(user)
+  const user = await getUser()
+  if (!isAdmin(user)) notFound()
+  const { providers, jobs, logs } = await getProvidersStatus()
+  const admin = true
   return (
     <>
-      <PageHeader eyebrow="Transparency" title="Data status" description="Where AIDICT's data comes from, how fresh it is and what each source is licensed for. Only free, documented sources are used." />
+      <PageHeader eyebrow="Owner · pipeline" title="Data status" description="Where AIDICT's data comes from, how fresh it is and what each source is licensed for. Only free, documented sources are used." />
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <Card className="xl:col-span-2">
           <CardHeader title="Pipeline jobs" eyebrow="Run on a schedule by GitHub Actions" />

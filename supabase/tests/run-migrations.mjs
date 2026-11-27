@@ -129,5 +129,31 @@ await asUser({ sub: bob, role: 'authenticated', app_metadata: { role: 'admin' } 
   ok(true, 'admin can toggle a feature flag')
 })
 
+console.log('\nAccess periods')
+const carol = '33333333-3333-3333-3333-333333333333'
+await db.exec(`update auth.users set raw_app_meta_data = '{"role":"admin"}' where id = '${bob}'`)
+await db.exec(`insert into auth.users (id, email) values ('${carol}', 'carol@example.com')`)
+const trial = (await db.query(`select plan, (access_until - now()) > interval '71 hours' as about3d from user_access where user_id = '${carol}'`)).rows[0]
+ok(trial?.plan === 'trial' && trial.about3d, 'new account starts a 3-day trial')
+ok((await db.query(`select count(*)::int n from notifications where user_id = '${bob}' and title = 'New account: carol'`)).rows[0].n === 1, 'every admin is notified of the sign-up')
+ok((await db.query(`select count(*)::int n from notifications where user_id = '${alice}' and title like 'New account%'`)).rows[0].n === 0, 'members are not notified of sign-ups')
+await asUser({ sub: carol, role: 'authenticated' }, async () => {
+  ok((await db.query(`select count(*)::int n from fixtures`)).rows[0].n === 1, 'member in trial reads fixtures')
+  await expectError(`update user_access set access_until = now() + interval '1 year'`, /permission denied/, 'member cannot extend their own access')
+})
+await db.exec(`update user_access set access_until = now() - interval '1 hour' where user_id = '${carol}'`)
+await asUser({ sub: carol, role: 'authenticated' }, async () => {
+  ok((await db.query(`select count(*)::int n from fixtures`)).rows[0].n === 0, 'expired member reads no fixtures')
+  ok((await db.query(`select count(*)::int n from smart_picks`)).rows[0].n === 0, 'expired member reads no picks')
+  ok((await db.query(`select count(*)::int n from user_access`)).rows[0].n === 1, 'expired member still sees their own access status')
+})
+await db.exec(`update user_access set plan = 'unlimited', access_until = null where user_id = '${carol}'`)
+await asUser({ sub: carol, role: 'authenticated' }, async () => {
+  ok((await db.query(`select count(*)::int n from fixtures`)).rows[0].n === 1, 'unlimited member reads fixtures again')
+})
+await asUser({ sub: bob, role: 'authenticated', app_metadata: { role: 'admin' } }, async () => {
+  ok((await db.query(`select count(*)::int n from user_access`)).rows[0].n === 3, 'admin sees every account access row')
+})
+
 console.log(`\n${passed} passed, ${failed} failed`)
 process.exit(failed ? 1 : 0)

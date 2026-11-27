@@ -5,8 +5,8 @@ from aidict_engine.jobs import settle as job
 
 
 class FakeRepo:
-    def __init__(self, picks, goals=None, goal_times=True, savers=()):
-        self.picks, self.goals, self.goal_times, self.savers = picks, goals or {}, goal_times, savers
+    def __init__(self, picks, goals=None, goal_times=True, savers=(), corners=None):
+        self.picks, self.goals, self.goal_times, self.savers, self.corners = picks, goals or {}, goal_times, savers, corners or {}
         self.outcomes, self.notes = [], []
 
     def all(self, sql, params=()):
@@ -14,6 +14,8 @@ class FakeRepo:
             return self.picks
         if "from goal_events" in sql:
             return [{"team_id": t} for t in self.goals.get(params[0], [])]
+        if "from match_statistics" in sql:
+            return [{"team_id": t, "value": v} for t, v in self.corners.get(params[0], {}).items()]
         if "from saved_matches" in sql:
             return [{"user_id": u} for u in self.savers]
         raise AssertionError(sql)
@@ -28,7 +30,7 @@ class FakeRepo:
 
 def pick(market, outcome, gh, ga, *, final=True, status="FT", days_ago=1, fid=1, pid="p1"):
     return {"id": pid, "market_id": market, "outcome_key": outcome, "label": outcome, "fixture_id": fid, "status": status,
-            "kickoff_at": datetime.now(timezone.utc) - timedelta(days=days_ago), "home_team_id": 10, "ft_home": gh, "ft_away": ga,
+            "kickoff_at": datetime.now(timezone.utc) - timedelta(days=days_ago), "home_team_id": 10, "away_team_id": 20, "ft_home": gh, "ft_away": ga,
             "is_final": final, "hs": "Home", "as_": "Away"}
 
 
@@ -60,3 +62,14 @@ def test_goal_order_uses_consistent_minutes_only():
     stale = FakeRepo([pick("first-goal", "home", 1, 2, days_ago=5)], goals={1: [10, 20]})
     job.settle(stale, log=lambda *_: None)
     assert results(stale) == {"p1": "void"}
+
+
+def test_corner_picks_settle_from_official_counts():
+    ok = FakeRepo([pick("corners-ou", "over9.5", 1, 0, pid="a"), pick("corners-1x2", "away", 1, 0, pid="b")], corners={1: {10: 4, 20: 7}})
+    job.settle(ok, log=lambda *_: None)
+    assert results(ok) == {"a": "won", "b": "won"}  # 11 corners; away 7 > home 4
+    fresh = FakeRepo([pick("corners-ou", "over9.5", 1, 0, days_ago=2)])
+    assert job.settle(fresh, log=lambda *_: None)["waiting"] == 1 and not fresh.outcomes
+    stale = FakeRepo([pick("corners-ou", "over9.5", 1, 0, days_ago=9)])
+    job.settle(stale, log=lambda *_: None)
+    assert results(stale) == {"p1": "void"}  # counts never published: voided, never guessed

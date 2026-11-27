@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { AlertTriangle, BookOpenCheck, Lock } from 'lucide-react'
-import { getFixture, getHeadToHead, getMarketStatuses, getSavedIds, getTeamResults, marketDefinitions, viewerTimeZone } from '@/lib/data'
+import { getFixture, getHeadToHead, getMarketStatuses, getSavedIds, getTeamResults, marketDefinitions, viewer, viewerTimeZone } from '@/lib/data'
 import { cx, fairOdds, fmtDate, fmtTime, horizonLabel, pct, relTime } from '@/lib/format'
 import type { FixtureVM, OutcomeVM, PickVM, TeamVM } from '@/lib/types'
 import { Badge, Card, CardHeader, EmptyState, LinkTabs, Notice, PageHeader, Progress, Table, Td, Th } from '@/components/ui/primitives'
@@ -27,8 +27,9 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
   if (!Number.isInteger(id) || id <= 0) notFound()
   const sp = await searchParams
   const tab: Tab = (TABS as readonly string[]).includes(sp.tab ?? '') ? (sp.tab as Tab) : 'overview'
-  const [f, tz, saved] = await Promise.all([getFixture(id), viewerTimeZone(), getSavedIds()])
+  const [f, tz, saved, { admin }] = await Promise.all([getFixture(id), viewerTimeZone(), getSavedIds(), viewer()])
   if (!f) notFound()
+  if (tab === 'data' && !admin) notFound()
   const count = new Set(f.outcomes.map((o) => o.market)).size
   return (
     <>
@@ -40,14 +41,14 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
         items={[
           { value: 'overview', label: 'Overview', href: `/match/${id}` },
           { value: 'markets', label: 'All markets', href: `/match/${id}?tab=markets`, badge: count ? <span className="num rounded-md bg-surface-3 px-1.5 text-[11px] font-bold text-fg-2">{count}</span> : undefined },
-          { value: 'prediction', label: 'Score model', href: `/match/${id}?tab=prediction` },
+          { value: 'prediction', label: 'Scores', href: `/match/${id}?tab=prediction` },
           { value: 'form', label: 'Form & H2H', href: `/match/${id}?tab=form` },
-          { value: 'data', label: 'Data & model', href: `/match/${id}?tab=data` },
+          ...(admin ? [{ value: 'data', label: 'Data & model', href: `/match/${id}?tab=data` }] : []),
         ]}
       />
-      {tab === 'overview' && <Overview f={f} tz={tz} />}
-      {tab === 'markets' && <Markets f={f} showAll={sp.all === '1'} />}
-      {tab === 'prediction' && <Prediction f={f} />}
+      {tab === 'overview' && <Overview f={f} tz={tz} admin={admin} />}
+      {tab === 'markets' && <Markets f={f} showAll={sp.all === '1'} admin={admin} />}
+      {tab === 'prediction' && <Prediction f={f} admin={admin} />}
       {tab === 'form' && <Form f={f} tz={tz} />}
       {tab === 'data' && <Data f={f} tz={tz} />}
     </>
@@ -55,7 +56,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
 }
 
 /* ───────────── Overview ───────────── */
-async function Overview({ f, tz }: { f: Detail; tz: string }) {
+async function Overview({ f, tz, admin }: { f: Detail; tz: string; admin: boolean }) {
   const picks = f.picks ?? []
   const s = f.snapshot
   const [homeRes, awayRes] = await Promise.all([getTeamResults(f.home.id, f.kickoff, 6), getTeamResults(f.away.id, f.kickoff, 6)])
@@ -70,23 +71,23 @@ async function Overview({ f, tz }: { f: Detail; tz: string }) {
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="min-w-0 space-y-5">
         <Card>
-          <CardHeader title="Smart picks" eyebrow={s ? `${picks.length} of max 5 · only outcomes that passed backtesting` : 'Not published yet'} action={<Link href={`/match/${f.id}?tab=markets`} className="text-[12px] font-bold text-brand-fg">All markets →</Link>} />
+          <CardHeader title="Smart picks" eyebrow={s ? `${picks.length} of max 5` : 'Not published yet'} action={<Link href={`/match/${f.id}?tab=markets`} className="text-[12px] font-bold text-brand-fg">All markets →</Link>} />
           <div className="p-4 pt-3">
             {!s ? (
               <EmptyState title="No prediction yet" body={isDone(f) ? 'No snapshot was published for this match.' : 'A preview is published up to 7 days before kick-off, then refreshed the day before and 2 hours before.'} />
             ) : picks.length === 0 ? (
-              <Notice tone="neutral" title="No outcome cleared every publication filter">
-                {s.selection?.shortfall ?? 'Each pick needs probability ≥ 60%, reliability ≥ 0.62, a lift of ≥ 3 points over the base rate and an active backtest gate.'}
+              <Notice tone="neutral" title="No pick for this match">
+                {admin && s.selection?.shortfall ? s.selection.shortfall : 'No outcome was strong enough to publish as a pick. Probabilities for every market are under All markets.'}
               </Notice>
             ) : (
               <div className="space-y-2">
                 {picks.map((p) => (
-                  <PickRow key={p.id} p={p} />
+                  <PickRow key={p.id} p={p} admin={admin} />
                 ))}
-                {s.selection?.shortfall && <p className="px-1 pt-1 text-[12px] text-fg-3">{s.selection.shortfall}</p>}
+                {admin && s.selection?.shortfall && <p className="px-1 pt-1 text-[12px] text-fg-3">{s.selection.shortfall}</p>}
               </div>
             )}
-            {s?.selection?.exclusions?.length ? (
+            {admin && s?.selection?.exclusions?.length ? (
               <details className="mt-3 rounded-xl border border-line px-3.5 py-2.5 text-[12.5px]">
                 <summary className="cursor-pointer font-bold text-fg-2">Why other strong outcomes were left out ({s.selection.exclusions.length})</summary>
                 <ul className="mt-2 space-y-1.5 text-fg-3">
@@ -102,16 +103,21 @@ async function Overview({ f, tz }: { f: Detail; tz: string }) {
         </Card>
         {s && (
           <Card>
-            <CardHeader title="How the model sees it" eyebrow="Explanation" action={<Link href={`/match/${f.id}?tab=prediction`} className="text-[12px] font-bold text-brand-fg">Score model →</Link>} />
+            <CardHeader title="What the numbers say" eyebrow="Summary" action={<Link href={`/match/${f.id}?tab=prediction`} className="text-[12px] font-bold text-brand-fg">Scores →</Link>} />
             <div className="p-5 pt-3 text-[14px] leading-relaxed text-fg-2">
-              Dixon–Coles expects <b className="text-fg">{s.lambdaHome.toFixed(2)}</b> goals for {f.home.short} and <b className="text-fg">{s.lambdaAway.toFixed(2)}</b> for {f.away.short}
+              Expected goals: <b className="text-fg">{s.lambdaHome.toFixed(2)}</b> for {f.home.short} and <b className="text-fg">{s.lambdaAway.toFixed(2)}</b> for {f.away.short}
               {s.x12 && (
                 <>
                   , which gives {f.home.short} <b className="text-fg">{pct(s.x12.home)}</b>, draw <b className="text-fg">{pct(s.x12.draw)}</b> and {f.away.short} <b className="text-fg">{pct(s.x12.away)}</b>
                 </>
               )}
-              . Ratings come from {Number(s.inputs.train_matches ?? 0).toLocaleString()} matches over the last three years, with recent games weighted more.
-              {Array.isArray(s.inputs.promoted) && (s.inputs.promoted as string[]).length > 0 && <> Newly promoted sides start from a cautious prior until they have enough top-flight games.</>}
+              .
+              {admin && (
+                <span className="mt-2 block text-[12.5px] text-fg-3">
+                  Owner view · goals model on {Number(s.inputs.train_matches ?? 0).toLocaleString()} matches, shots weight {String(s.inputs.shots_weight ?? '—')}
+                  {Array.isArray(s.inputs.promoted) && (s.inputs.promoted as string[]).length > 0 && <>, promoted prior for {(s.inputs.promoted as string[]).length} team(s)</>}.
+                </span>
+              )}
             </div>
           </Card>
         )}
@@ -135,7 +141,7 @@ async function Overview({ f, tz }: { f: Detail; tz: string }) {
                 </div>
               ))}
             </div>
-            <p className="mt-3 text-[11px] text-fg-3">All markets are summed from one score matrix, so they never contradict each other.</p>
+            <p className="mt-3 text-[11px] text-fg-3">Every market comes from the same prediction, so they never contradict each other.</p>
           </Card>
         )}
         {f.inventory.some((i) => i.data_type === 'conflict' && i.available) && (
@@ -145,7 +151,8 @@ async function Overview({ f, tz }: { f: Detail; tz: string }) {
         )}
         {s && (
           <Notice tone="neutral" icon={<Lock className="size-4" />} title="Immutable snapshot">
-            Published {fmtDate(s.snapshotAt, tz)} {fmtTime(s.snapshotAt, tz)} · {horizonLabel(s.horizon)} · model {s.modelVersion}. Stored append-only; never edited after publication.
+            Published {fmtDate(s.snapshotAt, tz)} {fmtTime(s.snapshotAt, tz)} · {horizonLabel(s.horizon)}
+            {admin && s.modelVersion ? ` · model ${s.modelVersion}` : ''}. Predictions are never edited after publication.
           </Notice>
         )}
       </div>
@@ -153,7 +160,7 @@ async function Overview({ f, tz }: { f: Detail; tz: string }) {
   )
 }
 
-function PickRow({ p }: { p: PickVM }) {
+function PickRow({ p, admin }: { p: PickVM; admin: boolean }) {
   return (
     <details className="group rounded-2xl border border-line bg-surface-2/60 open:bg-surface-2">
       <summary className="flex cursor-pointer list-none items-center gap-3 px-3.5 py-3">
@@ -161,8 +168,8 @@ function PickRow({ p }: { p: PickVM }) {
         <div className="min-w-0 flex-1">
           <div className="truncate text-[14px] font-bold text-fg">{p.label}</div>
           <div className="truncate text-[12px] text-fg-3">
-            {p.marketName} · reliability {Math.round(p.reliability * 100)} · {p.lift >= 0 ? '+' : ''}
-            {Math.round(p.lift * 100)} pts vs base
+            {p.marketName}
+            {admin && <> · reliability {Math.round(p.reliability * 100)} · {p.lift >= 0 ? '+' : ''}{Math.round(p.lift * 100)} pts vs base</>}
           </div>
         </div>
         <div className="text-right">
@@ -172,8 +179,9 @@ function PickRow({ p }: { p: PickVM }) {
       </summary>
       <div className="border-t border-line px-4 pb-4 pt-3 text-[12.5px] text-fg-2">
         <div className="mb-2 text-[12px] text-fg-3">
-          95% interval {pct(p.interval[0])}–{pct(p.interval[1])} · model fair price {fairOdds(p.p)}
+          {p.interval && <>Likely range {pct(p.interval[0])}–{pct(p.interval[1])} · </>}fair price {fairOdds(p.p)}
         </div>
+        {p.reasons.length === 0 && <p className="text-fg-3">{p.marketName}: {pct(p.p)} chance.</p>}
         <ul className="list-disc space-y-1 pl-4">
           {p.reasons.map((r, i) => (
             <li key={i}>{r}</li>
@@ -249,9 +257,9 @@ function TeamForm({ team, results, tz }: { team: TeamVM; results: FixtureVM[]; t
 }
 
 /* ───────────── All markets ───────────── */
-async function Markets({ f, showAll }: { f: Detail; showAll: boolean }) {
+async function Markets({ f, showAll, admin }: { f: Detail; showAll: boolean; admin: boolean }) {
   if (!f.snapshot) return <Card><EmptyState title="Markets are published with the prediction" body="Up to 7 days before kick-off, every supported market is computed from the same score matrix." /></Card>
-  const [defs, statuses] = await Promise.all([marketDefinitions(), getMarketStatuses(f.competition.id)])
+  const [defs, statuses] = await Promise.all([marketDefinitions(), admin ? getMarketStatuses(f.competition.id) : Promise.resolve(new Map())])
   const pickRank = new Map((f.picks ?? []).map((p) => [`${p.market}|${p.outcome}`, p.rank]))
   const byMarket = new Map<string, OutcomeVM[]>()
   for (const o of f.outcomes) byMarket.set(o.market, [...(byMarket.get(o.market) ?? []), o])
@@ -271,7 +279,7 @@ async function Markets({ f, showAll }: { f: Detail; showAll: boolean }) {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-[13px] text-fg-3">
-          {activeCount} of {f.outcomes.length} outcomes are active for {f.competition.name}. Others are still validating or unavailable, and are shown for transparency only.
+          {activeCount} of {f.outcomes.length} outcomes are available as picks for {f.competition.name}. The rest are shown for information only.
         </p>
         <div className="flex gap-1 rounded-xl border border-line bg-inset p-1 text-[12px] font-semibold">
           <Link href={`/match/${f.id}?tab=markets`} scroll={false} className={cx('rounded-[9px] px-3 py-1', !showAll ? 'bg-surface-3 text-fg' : 'text-fg-3')}>
@@ -284,7 +292,7 @@ async function Markets({ f, showAll }: { f: Detail; showAll: boolean }) {
       </div>
       {groups.size === 0 && (
         <Card>
-          <EmptyState title="No active markets for this competition yet" body="Markets switch on only after passing two consecutive walk-forward backtests. Choose All outcomes to see the raw probabilities." />
+          <EmptyState title="No markets available as picks here yet" body="Choose All outcomes to see every probability for this match." />
         </Card>
       )}
       {CATS.filter(([c]) => groups.has(c)).map(([c, label]) => (
@@ -295,13 +303,13 @@ async function Markets({ f, showAll }: { f: Detail; showAll: boolean }) {
               <div key={m} className="py-3">
                 <div className="mb-2 flex items-center gap-2">
                   <span className="text-[13px] font-bold text-fg">{defs.get(m)?.name ?? m}</span>
-                  {statuses.get(m) && statuses.get(m)!.status !== 'active' && <Badge tone="warn">{statuses.get(m)!.status}</Badge>}
+                  {admin && statuses.get(m) && statuses.get(m)!.status !== 'active' && <Badge tone="warn">{statuses.get(m)!.status}</Badge>}
                 </div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                   {os.map((o) => {
                     const rank = pickRank.get(`${o.market}|${o.outcome}`)
                     return (
-                      <div key={o.outcome} className={cx('rounded-xl border px-3 py-2.5', rank ? 'border-brand/40 bg-brand-soft' : 'border-line bg-surface-2/60')} title={o.reason ?? undefined}>
+                      <div key={o.outcome} className={cx('rounded-xl border px-3 py-2.5', rank ? 'border-brand/40 bg-brand-soft' : 'border-line bg-surface-2/60')} title={admin ? (o.reason ?? undefined) : undefined}>
                         <div className="flex items-center justify-between gap-2">
                           <span className="truncate text-[12.5px] font-semibold text-fg-2">{o.label}</span>
                           <span className="num text-[16px] font-bold text-fg">{pct(o.p)}</span>
@@ -309,7 +317,7 @@ async function Markets({ f, showAll }: { f: Detail; showAll: boolean }) {
                         <Progress value={o.p} tone={o.status === 'active' ? 'brand' : 'neutral'} height={4} className="mt-1.5" />
                         <div className="mt-1.5 flex items-center justify-between text-[11px] text-fg-3">
                           <span>base {o.base != null ? pct(o.base) : '—'}</span>
-                          {rank ? <span className="font-bold text-brand-fg">Pick #{rank}</span> : <span className="capitalize">{o.status}</span>}
+                          {rank ? <span className="font-bold text-brand-fg">Pick #{rank}</span> : <span>{o.status === 'active' ? 'available' : admin ? o.status : 'info only'}</span>}
                         </div>
                       </div>
                     )
@@ -325,7 +333,7 @@ async function Markets({ f, showAll }: { f: Detail; showAll: boolean }) {
 }
 
 /* ───────────── Score model ───────────── */
-function Prediction({ f }: { f: Detail }) {
+function Prediction({ f, admin }: { f: Detail; admin: boolean }) {
   const s = f.snapshot
   if (!s) return <Card><EmptyState title="No prediction yet" body="The score model runs up to 7 days before kick-off." /></Card>
   const cells: { h: number; a: number; p: number }[] = []
@@ -336,7 +344,7 @@ function Prediction({ f }: { f: Detail }) {
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
       <Card>
-        <CardHeader title="Correct-score matrix" eyebrow={`λ home ${s.lambdaHome.toFixed(2)} · λ away ${s.lambdaAway.toFixed(2)} · ρ ${Number(s.inputs.rho ?? 0).toFixed(3)}`} />
+        <CardHeader title="Correct-score probabilities" eyebrow={`Expected goals ${s.lambdaHome.toFixed(2)} – ${s.lambdaAway.toFixed(2)}${admin ? ` · ρ ${Number(s.inputs.rho ?? 0).toFixed(3)}` : ''}`} />
         <div className="p-4">
           <ScoreMatrix matrix={s.matrix} />
         </div>
@@ -370,7 +378,7 @@ function Prediction({ f }: { f: Detail }) {
         </Card>
         {s.x12 && (
           <Card className="p-5">
-            <div className="eyebrow mb-3">Model fair prices (1 ÷ probability)</div>
+            <div className="eyebrow mb-3">Fair prices (1 ÷ probability)</div>
             <div className="grid grid-cols-3 gap-2 text-center">
               {(
                 [
@@ -385,7 +393,7 @@ function Prediction({ f }: { f: Detail }) {
                 </div>
               ))}
             </div>
-            <p className="mt-3 text-[11px] text-fg-3">These are the model&apos;s own prices with no margin. They are not bookmaker odds and not a recommendation to bet.</p>
+            <p className="mt-3 text-[11px] text-fg-3">Prices with no margin, worked out from the probabilities. They are not bookmaker odds and not a recommendation to bet.</p>
           </Card>
         )}
       </div>
@@ -434,7 +442,7 @@ async function Form({ f, tz }: { f: Detail; tz: string }) {
         <StatCompare label="Clean sheets %" home={H.cs * 100} away={A.cs * 100} />
         <StatCompare label="Both teams scored %" home={H.btts * 100} away={A.btts * 100} />
         <StatCompare label="Over 2.5 goals %" home={H.o25 * 100} away={A.o25 * 100} />
-        <p className="mt-2 text-[11px] text-fg-3">Computed from stored final results in all competitions. Raw form is context only; the model already weights it.</p>
+        <p className="mt-2 text-[11px] text-fg-3">From final results in all competitions. Recent form is shown for context.</p>
       </Card>
       <Card>
         <CardHeader title="Head-to-head" eyebrow={h2h.length ? `${f.home.short} ${wins.h} · draws ${wins.d} · ${f.away.short} ${wins.a}` : 'No previous meetings stored'} />

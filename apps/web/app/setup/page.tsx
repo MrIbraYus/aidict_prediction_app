@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
+import { redirect } from 'next/navigation'
 import { Database, KeyRound, Terminal } from 'lucide-react'
-import { supabaseConfigured } from '@/lib/supabase/server'
+import { getUser, isAdmin, supabaseConfigured } from '@/lib/supabase/server'
 import { Card, Notice } from '@/components/ui/primitives'
 
 export const metadata: Metadata = { title: 'Setup' }
@@ -10,6 +11,8 @@ export const dynamic = 'force-dynamic'
 export default async function SetupPage({ searchParams }: { searchParams: Promise<{ schema?: string }> }) {
   const ok = supabaseConfigured()
   const schemaMissing = (await searchParams).schema === 'missing'
+  // Once configured, setup instructions are for admins only; everyone else goes to sign-in.
+  if (ok && !schemaMissing && !isAdmin(await getUser())) redirect('/login')
   return (
     <main className="mx-auto max-w-2xl px-5 py-14">
       {/* eslint-disable-next-line @next/next/no-img-element */}

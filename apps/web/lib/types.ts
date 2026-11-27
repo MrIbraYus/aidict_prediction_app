@@ -50,7 +50,7 @@ export type PickVM = {
   confidence: 'High' | 'Medium' | 'Low'
   lift: number
   score: number
-  interval: [number, number]
+  interval: [number, number] | null
   reasons: string[]
   result?: string | null
 }

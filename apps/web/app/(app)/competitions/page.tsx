@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { getCompetitions, getGates } from '@/lib/data'
+import { getCompetitions, getGates, viewer } from '@/lib/data'
 import { FLAG_BY_CODE } from '@/lib/format'
 import { Badge, Card, EmptyState, PageHeader, Progress } from '@/components/ui/primitives'
 import { Flag } from '@/components/sports/identity'
@@ -9,12 +9,13 @@ export const metadata: Metadata = { title: 'Competitions' }
 export const dynamic = 'force-dynamic'
 
 export default async function CompetitionsPage() {
-  const [comps, gates] = await Promise.all([getCompetitions(), getGates()])
+  const { admin } = await viewer()
+  const [comps, gates] = await Promise.all([getCompetitions(), admin ? getGates() : Promise.resolve([])])
   const active = new Map<string, number>()
   for (const g of gates) if (g.status === 'active') active.set(g.competition, (active.get(g.competition) ?? 0) + 1)
   return (
     <>
-      <PageHeader eyebrow="Football" title="Competitions" description="Competitions AIDICT tracks. Standings are computed from stored final results, so they match the data the model sees." />
+      <PageHeader eyebrow="Football" title="Competitions" description="Competitions AIDICT covers, with standings and upcoming fixtures." />
       {comps.length === 0 ? (
         <Card>
           <EmptyState title="No competitions yet" body="Apply the database schema and seed, then run the sync job." />
@@ -41,7 +42,7 @@ export default async function CompetitionsPage() {
                 <Progress value={c.fixtures ? c.results / c.fixtures : 0} height={5} />
               </div>
               <div className="mt-3 flex flex-wrap gap-1.5">
-                {active.get(c.code) ? <Badge tone="success">{active.get(c.code)} validated outcomes</Badge> : <Badge tone="warn">Model validating</Badge>}
+                {admin && (active.get(c.code) ? <Badge tone="success">{active.get(c.code)} validated outcomes</Badge> : <Badge tone="warn">Model validating</Badge>)}
               </div>
             </Link>
           ))}

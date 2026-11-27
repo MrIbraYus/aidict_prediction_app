@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { LogOut } from 'lucide-react'
-import { getPreferences, viewerTimeZone } from '@/lib/data'
+import { getMyAccess, getPreferences, viewerTimeZone } from '@/lib/data'
+import { timeLeft } from '@/lib/access'
+import { fmtLong, fmtTime } from '@/lib/format'
 import { signOut } from '@/lib/actions'
 import { displayName } from '@/lib/identity'
 import { getUser, isAdmin } from '@/lib/supabase/server'
@@ -13,7 +15,7 @@ export const metadata: Metadata = { title: 'Settings' }
 export const dynamic = 'force-dynamic'
 
 export default async function SettingsPage() {
-  const [user, prefs, tz] = await Promise.all([getUser(), getPreferences(), viewerTimeZone()])
+  const [user, prefs, tz, access] = await Promise.all([getUser(), getPreferences(), viewerTimeZone(), getMyAccess()])
   return (
     <>
       <PageHeader eyebrow="Preferences" title="Settings" />
@@ -45,6 +47,10 @@ export default async function SettingsPage() {
               <div className="mt-1 flex items-center gap-2 text-[12px] text-fg-3">
                 {isAdmin(user) ? <Badge tone="brand">Owner · admin</Badge> : <Badge>Member</Badge>}
                 <span>Joined {user?.created_at ? new Date(user.created_at).toLocaleDateString('en-GB', { timeZone: tz }) : '—'}</span>
+              </div>
+              <div className="mt-2 text-[13px] text-fg-2">
+                Access: <b className="text-fg">{access.plan === 'unlimited' ? 'Unlimited' : `${access.plan === 'trial' ? 'Free trial' : 'Access period'} · ${timeLeft(access)}`}</b>
+                {access.until && <span className="text-fg-3"> (until {fmtLong(access.until, tz)}, {fmtTime(access.until, tz)})</span>}
               </div>
             </div>
             <Link href="/reset-password" className="inline-flex h-10 items-center rounded-xl border border-line px-4 text-sm font-semibold text-fg hover:bg-surface-2">

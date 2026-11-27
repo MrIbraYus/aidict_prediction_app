@@ -4,15 +4,16 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   BarChart3, Bell, BookOpen, ChevronsLeft, Database, HeartHandshake, History, Info, LayoutDashboard, ListChecks, ListOrdered, LogOut, Menu, Search,
-  Settings, ShieldCheck, Star, User, Zap,
+  Clock, Settings, ShieldCheck, Star, User, Users, Zap,
 } from 'lucide-react'
 import { cx, relTime } from '@/lib/format'
 import { rememberTimeZone, signOut } from '@/lib/actions'
 import { Sheet, Toaster } from '../ui/overlay'
 import { ThemeToggle } from './theme-toggle'
+import { NotificationWatcher } from './notification-watcher'
 
 type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; badge?: ReactNode; admin?: boolean }
-export type ShellInfo = { email: string; admin: boolean; unread: number; live: number; lastSync: string | null; sourcesOk: number; sourcesTotal: number; tz: string }
+export type ShellInfo = { email: string; admin: boolean; unread: number; live: number; lastSync: string | null; sourcesOk: number; sourcesTotal: number; tz: string; access: { label: string; warn: boolean } | null }
 
 function nav(info: ShellInfo): { group: string; items: NavItem[] }[] {
   return [
@@ -35,17 +36,23 @@ function nav(info: ShellInfo): { group: string; items: NavItem[] }[] {
       group: 'Track',
       items: [
         { to: '/history', label: 'Prediction History', icon: History },
-        { to: '/performance', label: 'Performance', icon: BarChart3 },
-      ],
-    },
-    {
-      group: 'System',
-      items: [
-        { to: '/providers', label: 'Data Status', icon: Database },
         { to: '/notifications', label: 'Notifications', icon: Bell, badge: info.unread ? <span className="num rounded-md bg-surface-3 px-1.5 text-[11px] font-bold text-fg-2">{info.unread}</span> : undefined },
-        ...(info.admin ? [{ to: '/admin', label: 'Admin', icon: ShieldCheck }] : []),
       ],
     },
+    // Owner-only section: never sent to members (the server also refuses these pages to them).
+    ...(info.admin
+      ? [
+          {
+            group: 'Owner',
+            items: [
+              { to: '/admin', label: 'Admin', icon: ShieldCheck },
+              { to: '/admin/users', label: 'Users', icon: Users },
+              { to: '/providers', label: 'Data Status', icon: Database },
+              { to: '/performance', label: 'Model Performance', icon: BarChart3 },
+            ],
+          },
+        ]
+      : []),
   ]
 }
 
@@ -55,7 +62,7 @@ const FOOT: NavItem[] = [
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
-const active = (path: string, to: string) => (to === '/' ? path === '/' : path === to || path.startsWith(to + '/') || (to === '/matches' && path.startsWith('/match/')))
+const active = (path: string, to: string) => (to === '/' || to === '/admin' ? path === to : path === to || path.startsWith(to + '/') || (to === '/matches' && path.startsWith('/match/')))
 
 /** The supplied wordmark is white; in light theme it sits on a dark plate. Pure CSS swap, no flash. */
 function Wordmark({ height = 30 }: { height?: number }) {
@@ -202,7 +209,12 @@ function Topbar({ info, onMenu }: { info: ShellInfo; onMenu: () => void }) {
           <SearchForm />
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <DataFreshness info={info} />
+          {info.admin && <DataFreshness info={info} />}
+          {info.access && (
+            <Link href="/settings" title="Your access" className={cx('hidden h-10 items-center gap-2 rounded-full border px-3 text-[12px] font-semibold sm:flex', info.access.warn ? 'border-warn/40 bg-warn-soft text-warn' : 'border-line bg-surface-1 text-fg-2 hover:text-fg')}>
+              <Clock className="size-3.5" /> {info.access.label}
+            </Link>
+          )}
           <button aria-label="Search" onClick={() => setSearch(true)} className="inline-flex size-10 items-center justify-center rounded-full border border-line bg-surface-2 text-fg-2 hover:text-fg md:hidden">
             <Search className="size-[18px]" />
           </button>
@@ -259,6 +271,11 @@ function MobileMenu({ info, open, onClose }: { info: ShellInfo; open: boolean; o
   return (
     <Sheet open={open} onClose={onClose} title="Menu">
       <div className="space-y-5">
+        {info.access && (
+          <Link href="/settings" onClick={onClose} className={cx('flex items-center gap-2 rounded-xl border px-3 py-2.5 text-[13px] font-semibold', info.access.warn ? 'border-warn/40 bg-warn-soft text-warn' : 'border-line bg-surface-1 text-fg-2')}>
+            <Clock className="size-4" /> {info.access.label}
+          </Link>
+        )}
         {nav(info).map((g) => (
           <div key={g.group}>
             <div className="eyebrow mb-1.5 px-1">{g.group}</div>
@@ -303,6 +320,7 @@ export function AppShell({ info, children }: { info: ShellInfo; children: ReactN
       <MobileNav onMore={() => setMenu(true)} />
       <MobileMenu info={info} open={menu} onClose={() => setMenu(false)} />
       <Toaster />
+      <NotificationWatcher initial={info.unread} />
     </div>
   )
 }

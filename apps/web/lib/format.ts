@@ -32,3 +32,14 @@ export const FLAG_BY_CODE: Record<string, string> = { PL: 'eng', ELC: 'eng', PD:
 
 export const HORIZON_LABEL: Record<string, string> = { 'T-7d': '7-day preview', 'T-24h': 'day-before prediction', 'T-2h': 'final pre-match update', manual: 'manual run' }
 export const horizonLabel = (h: string) => HORIZON_LABEL[h] ?? h
+
+/** Market families for browsing: which kind of question a market answers (not its database category). */
+export type MarketFamily = 'goals' | 'corners' | 'combined' | 'order' | 'result'
+export const FAMILY_LABEL: Record<MarketFamily, string> = { goals: 'Goals', corners: 'Corners', combined: 'Combinations', order: 'Goal order', result: 'Result & handicaps' }
+export function marketFamily(market: string): MarketFamily {
+  if (market === 'ou' || market === 'btts') return 'goals'
+  if (market.startsWith('corners')) return 'corners'
+  if (market.includes('-or-')) return 'combined'
+  if (market === 'first-goal' || market.endsWith('-row')) return 'order'
+  return 'result'
+}

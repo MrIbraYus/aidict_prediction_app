@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { AppShell } from '@/components/layout/shell'
-import { getShellInfo, schemaReady, viewerTimeZone } from '@/lib/data'
+import { getMyAccess, getShellInfo, schemaReady, viewerTimeZone } from '@/lib/data'
+import { accessBadge, expiringSoon } from '@/lib/access'
+import { AccessEnded } from '@/components/access-ended'
 import { displayName } from '@/lib/identity'
 import { getUser, isAdmin, supabaseConfigured } from '@/lib/supabase/server'
 
@@ -19,9 +21,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       </main>
     )
   if (!(await schemaReady())) redirect('/setup?schema=missing')
-  const [info, tz] = await Promise.all([getShellInfo(), viewerTimeZone()])
+  const admin = isAdmin(user)
+  const [info, tz, access] = await Promise.all([getShellInfo(), viewerTimeZone(), getMyAccess()])
+  if (!admin && !access.active) return <AccessEnded name={displayName(user.email)} plan={access.plan} until={access.until} />
+  const accessInfo = admin ? null : { label: accessBadge(access), warn: expiringSoon(access) }
   return (
-    <AppShell info={{ ...info, email: displayName(user.email), admin: isAdmin(user), tz }}>
+    <AppShell info={{ ...info, email: displayName(user.email), admin, tz, access: accessInfo }}>
       {children}
     </AppShell>
   )

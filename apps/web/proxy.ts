@@ -30,6 +30,13 @@ export async function proxy(request: NextRequest) {
     },
   })
   const { data } = await supabase.auth.getUser()
+  // Deactivated accounts are signed out on their next request, even if their session token has not expired yet.
+  if (data.user?.banned_until && new Date(data.user.banned_until).getTime() > Date.now()) {
+    await supabase.auth.signOut()
+    const out = NextResponse.redirect(new URL('/login?error=deactivated', request.url))
+    response.cookies.getAll().forEach((c) => out.cookies.set(c))
+    return out
+  }
   const isPublic = PUBLIC.some((p) => path === p || path.startsWith(p + '/'))
   if (!data.user && !isPublic) {
     const to = new URL('/login', request.url)

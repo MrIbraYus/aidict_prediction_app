@@ -1,15 +1,17 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { getBacktestRuns, getGates } from '@/lib/data'
+import { notFound } from 'next/navigation'
+import { getBacktestRuns, getGates, viewer } from '@/lib/data'
 import { summarizeRun, type Metric } from '@/lib/runs'
 import { cx, FLAG_BY_CODE, pct, relTime } from '@/lib/format'
 import { Card, CardHeader, EmptyState, Notice, PageHeader, StatusBadge, Table, Td, Th } from '@/components/ui/primitives'
 import { Flag } from '@/components/sports/identity'
 
-export const metadata: Metadata = { title: 'Performance' }
+export const metadata: Metadata = { title: 'Model performance' }
 export const dynamic = 'force-dynamic'
 
 export default async function PerformancePage({ searchParams }: { searchParams: Promise<{ c?: string }> }) {
+  if (!(await viewer()).admin) notFound()
   const sp = await searchParams
   const [runs, gates] = await Promise.all([getBacktestRuns(), getGates()])
   const summaries = runs.map(summarizeRun).filter((r) => r.model && r.base)
@@ -18,7 +20,7 @@ export default async function PerformancePage({ searchParams }: { searchParams: 
   const compGates = gates.filter((g) => g.competition === comp).sort((a, b) => (a.status === b.status ? a.market.localeCompare(b.market) : a.status === 'active' ? -1 : 1))
   return (
     <>
-      <PageHeader eyebrow="Model quality" title="Performance" description="Out-of-sample results from walk-forward backtests: the model only ever predicts seasons it was not fitted on. Lower log loss, Brier and RPS are better; ECE measures calibration." />
+      <PageHeader eyebrow="Owner · model quality" title="Model performance" description="Out-of-sample results from walk-forward backtests: the model only ever predicts seasons it was not fitted on. Lower log loss, Brier and RPS are better; ECE measures calibration." />
       <Notice tone="neutral" className="mb-5" title="Read this first">
         Beating the base rate shows the model has real signal. Closing bookmaker odds are still more accurate, which is why AIDICT never claims an edge over the market or guarantees outcomes.
       </Notice>

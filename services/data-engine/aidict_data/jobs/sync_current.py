@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from .. import env
 from ..db import Repo, connect
 from ..normalise import canonical
-from ..providers import FootballDataOrgAdapter, OpenLigaDbAdapter
+from ..providers import FootballDataOrgAdapter, FootballDataUkAdapter, OpenLigaDbAdapter
 from ..providers.base import INTERNAL_STATUS
 from ..types import Ok
 
@@ -86,6 +86,45 @@ def sync_competition(repo: Repo, fdo: FootballDataOrgAdapter, code: str, skip_te
     return {"season": label, "teams": teams, "fixtures": n, "results": results, "conflicts": conflicts}
 
 
+STAT_KEYS = ("shots", "shots_on_target", "corners", "yellow", "red")
+
+
+def sync_match_stats(repo: Repo, code: str, season_id: int, label: str, log) -> int:
+    """Official shots, corners and cards for this season's finished matches (football-data.co.uk, updated a few times a week).
+    Used to settle corner picks and to train the shots and corners ratings. Only changed values are written."""
+    if code not in CORNER_DATA:
+        return 0
+    res = FootballDataUkAdapter().get_match_statistics(code, label)
+    if not isinstance(res, Ok):
+        log(f"  ! {code} statistics: {getattr(res, 'error', res)}")
+        return 0
+    fixtures = repo.all("""select f.id, f.kickoff_at, f.home_team_id, f.away_team_id, ah.alias as hc, aa.alias as ac from fixtures f
+                           join team_aliases ah on ah.team_id = f.home_team_id and ah.source = 'canonical'
+                           join team_aliases aa on aa.team_id = f.away_team_id and aa.source = 'canonical'
+                           where f.season_id = %s and f.status in ('FT', 'AET', 'PEN')""", (season_id,))
+    index = {(f["hc"], f["ac"], f["kickoff_at"].date()): f for f in fixtures}
+    found: dict[int, dict] = {}
+    for st in res.data:
+        if st.key not in STAT_KEYS:
+            continue
+        h, a, d = canonical(st.home), canonical(st.away), st.kickoff.date()
+        f = next((index[k] for k in ((h, a, d), (h, a, d - timedelta(days=1)), (h, a, d + timedelta(days=1))) if k in index), None)
+        if f:
+            team = f["home_team_id"] if st.side == "home" else f["away_team_id"]
+            found.setdefault(f["id"], {})[(team, st.key)] = st.value
+    if not found:
+        return 0
+    stored = {(r["fixture_id"], r["team_id"], r["stat_key"]): float(r["value"]) for r in repo.all(
+        "select fixture_id, team_id, stat_key, value from match_statistics where definition_source = 'football-data-co-uk' and fixture_id = any(%s)",
+        (list(found),))}
+    rows = [(fid, team, key, v, "football-data-co-uk", "football-data-co-uk") for fid, vals in found.items() for (team, key), v in vals.items()
+            if stored.get((fid, team, key)) != float(v)]
+    repo.many("""insert into match_statistics (fixture_id, team_id, stat_key, value, definition_source, provider) values (%s, %s, %s, %s, %s, %s)
+                 on conflict (fixture_id, team_id, stat_key, definition_source) do update set value = excluded.value""", rows)
+    repo.log_sync("football-data-co-uk", "sync_current", f"/{code}/{label}", 200, None, len(rows))
+    return len(found)
+
+
 def sync_bundesliga_goals(repo: Repo, season_label_: str, log) -> int:
     """Real goal order for the Bundesliga (first-goal, goals-in-a-row, 1UP-type markets)."""
     comp_id = repo.competition_id("BL1")
@@ -148,6 +187,9 @@ def main(argv=None):
                 r = sync_competition(repo, fdo, code, args.skip_teams, print)
                 if code == "BL1" and r.get("season"):
                     r["goal_sequences"] = sync_bundesliga_goals(repo, r["season"], print)
+                if r.get("season"):
+                    sid = repo.one("select s.id from seasons s join competitions c on c.id = s.competition_id where c.code = %s and s.label = %s", (code, r["season"]))
+                    r["matches_with_stats"] = sync_match_stats(repo, code, sid["id"], r["season"], print) if sid else 0
             print(f"✓ {code}: {r}")
         except Exception as e:  # keep other competitions syncing; record the failure
             status = "warning"

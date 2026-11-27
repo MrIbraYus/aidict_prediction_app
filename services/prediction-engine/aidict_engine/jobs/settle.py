@@ -10,9 +10,12 @@ from datetime import datetime, timedelta, timezone
 from aidict_data import env
 from aidict_data.db import Repo, connect
 
+from .. import corners
 from ..market_eval import SPECS
 
 SPEC = {(s.market, s.outcome): s for s in SPECS}
+CORNER_SPEC = {(s.market, s.outcome): s for s in corners.SPECS}
+STATS_WAIT = timedelta(days=7)  # football-data.co.uk publishes statistics a few days after the match
 ORDER_WAIT = timedelta(days=3)
 
 
@@ -27,7 +30,7 @@ def goal_sequence(repo: Repo, fixture_id: int, home_id: int, gh: int, ga: int) -
 
 def settle(repo: Repo, log=print) -> dict:
     now = datetime.now(timezone.utc)
-    rows = repo.all("""select sp.id, sp.market_id, sp.outcome_key, sp.reasons->>'label' label, f.id fixture_id, f.status, f.kickoff_at, f.home_team_id,
+    rows = repo.all("""select sp.id, sp.market_id, sp.outcome_key, sp.reasons->>'label' label, f.id fixture_id, f.status, f.kickoff_at, f.home_team_id, f.away_team_id,
                               r.ft_home, r.ft_away, r.is_final, th.short_name hs, ta.short_name as_
                        from smart_picks sp join fixtures f on f.id = sp.fixture_id
                        join teams th on th.id = f.home_team_id join teams ta on ta.id = f.away_team_id
@@ -44,6 +47,18 @@ def settle(repo: Repo, log=print) -> dict:
         elif not r["is_final"]:
             counts["waiting"] += 1
             continue
+        elif (r["market_id"], r["outcome_key"]) in CORNER_SPEC:
+            cs = CORNER_SPEC[(r["market_id"], r["outcome_key"])]
+            got = {x["team_id"]: float(x["value"]) for x in repo.all(
+                "select team_id, value from match_statistics where fixture_id = %s and stat_key = 'corners'", (r["fixture_id"],))}
+            ch, ca = got.get(r["home_team_id"]), got.get(r["away_team_id"])
+            if ch is None or ca is None:
+                if now - r["kickoff_at"] < STATS_WAIT:
+                    counts["waiting"] += 1
+                    continue
+                result, source = "void", "corner counts never published"
+            else:
+                result, source = ("won" if cs.settle(ch, ca) >= 1 else "lost"), "match_statistics (football-data.co.uk)"
         elif spec is None:
             result, source = "void", "unknown market"
         else:

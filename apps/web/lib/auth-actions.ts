@@ -35,6 +35,7 @@ export async function signIn(_: FormState, form: FormData): Promise<FormState> {
   if (error) {
     if (!isUsernameLogin(email) && (error.code === 'email_not_confirmed' || /not confirmed/i.test(error.message)))
       return { error: 'This email address has not been confirmed yet.', unconfirmed: true, email }
+    if (error.code === 'user_banned' || /banned/i.test(error.message)) return { error: 'This account has been deactivated. Contact the AIDICT owner if you think this is a mistake.' }
     return { error: error.message === 'Invalid login credentials' ? 'Username/email or password is incorrect.' : error.message }
   }
   redirect(safeNext(form.get('next')))
@@ -71,7 +72,7 @@ export async function signUp(_: FormState, form: FormData): Promise<FormState> {
   const bootstrap = !list.users.some((u) => u.email_confirmed_at)
   if (!bootstrap) {
     const { data: s } = await admin.from('app_settings').select('value').eq('key', 'signup').maybeSingle()
-    if (!(s?.value as { open?: boolean } | null)?.open) return { error: 'Sign-up is closed. Ask the owner of this AIDICT workspace for access.' }
+    if (!(s?.value as { open?: boolean } | null)?.open) return { error: 'New sign-ups are paused at the moment. Please try again later.' }
   }
   const sb = await createClient()
 
@@ -84,7 +85,7 @@ export async function signUp(_: FormState, form: FormData): Promise<FormState> {
 
   // Owner bootstrap, or a username account: created already confirmed.
   if (list.users.some((u) => u.email?.toLowerCase() === email)) return { error: 'That name is already taken. Sign in instead.' }
-  const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, app_metadata: bootstrap ? { role: 'admin' } : {} })
+  const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, app_metadata: bootstrap ? { role: 'admin', owner: true } : {} })
   if (error || !data.user) return { error: error?.message ?? 'Could not create the account.' }
   const id = data.user.id
   if (bootstrap) {

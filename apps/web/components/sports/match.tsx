@@ -106,7 +106,7 @@ export function MatchRow({ f, tz, showComp, saved, signedIn = true }: { f: Fixtu
           {f.snapshot ? (
             <>
               <div className="truncate text-[12px] font-semibold text-fg-2" title={top ? top.label : (f.snapshot.selection?.shortfall ?? '')}>
-                {top ? top.label : 'No pick passes the filters'}
+                {top ? top.label : 'No pick for this match'}
               </div>
               <div className="mt-1 flex items-center gap-1.5">
                 {top ? <ConfidenceBadge c={top.confidence} /> : <Badge>No pick</Badge>}
@@ -217,10 +217,10 @@ export function MatchHero({ f, tz, compact, linkTo }: { f: FixtureVM; tz: string
               ) : (
                 <>
                   <Badge>No pick</Badge>
-                  <span className="font-semibold text-fg-2">{f.snapshot?.selection?.shortfall ?? 'No outcome passed the publication filters.'}</span>
+                  <span className="font-semibold text-fg-2">{f.snapshot?.selection?.shortfall ?? 'No outcome was strong enough to publish as a pick.'}</span>
                 </>
               )}
-              <span className="text-fg-3">· model {f.snapshot?.modelVersion}</span>
+              {f.snapshot?.modelVersion ? <span className="text-fg-3">· model {f.snapshot.modelVersion}</span> : null}
             </div>
           </>
         ) : (

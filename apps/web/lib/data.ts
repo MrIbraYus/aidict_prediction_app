@@ -1,10 +1,25 @@
 import 'server-only'
+import { cache } from 'react'
 import { cookies } from 'next/headers'
-import { createClient } from './supabase/server'
+import { createClient, createServiceClient, getUser, isAdmin } from './supabase/server'
+import { outcomeLabel } from './outcome-labels'
+import { accessFrom, type Access } from './access'
 import type { CompetitionVM, FixtureVM, GateVM, MarketDefVM, MarketStatusVM, OutcomeVM, PickVM, SnapshotVM, TeamVM, X12 } from './types'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Row = any
+
+/** Who is asking, once per request. Technical fields are only ever read for admins (server-side, after this check). */
+export const viewer = cache(async () => {
+  const user = await getUser()
+  return { user, admin: isAdmin(user), owner: isAdmin(user) && user?.app_metadata?.owner === true }
+})
+
+/** Service-key client for owner-only fields. Throws unless the current viewer is an admin. */
+async function adminDb() {
+  if (!(await viewer()).admin) throw new Error('Admins only')
+  return createServiceClient()
+}
 
 export async function viewerTimeZone(): Promise<string> {
   const c = (await cookies()).get('aidict-tz')?.value
@@ -19,6 +34,8 @@ export async function viewerTimeZone(): Promise<string> {
 const TEAM_COLS = 'id,name,short_name,tla,badge:team_badges(source_url,override_url,kind,contrast_hint)'
 const FIXTURE_COLS = `id,kickoff_at,status,round,venue,season:seasons!inner(label,competition:competitions!inner(id,code,name,country,type,is_active)),
   home:teams!fixtures_home_team_id_fkey(${TEAM_COLS}),away:teams!fixtures_away_team_id_fkey(${TEAM_COLS}),result:match_results(ft_home,ft_away,ht_home,ht_away,is_final)`
+// Columns a member may read (matches the grants in migration 0011).
+const PICK_COLS = 'id,snapshot_id,rank,market_id,outcome_key,probability,reliability,confidence,lift,published_at,public_reasons,outcome:pick_outcomes(result)'
 
 function one<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : (v ?? null)
@@ -48,23 +65,21 @@ function matrix(bp: number[] | null): number[][] {
   return m
 }
 
-/** Latest snapshot per fixture with 1X2 probabilities. */
+/** Latest snapshot per fixture with 1X2 probabilities. Model internals (inputs, hash, version) are attached for admins only. */
 async function snapshotsFor(ids: number[]): Promise<Map<number, SnapshotVM>> {
   const out = new Map<number, SnapshotVM>()
   if (!ids.length) return out
   const sb = await createClient()
   const { data: snaps } = await sb
     .from('prediction_snapshots')
-    .select('id,fixture_id,snapshot_at,horizon,lambda_home,lambda_away,score_matrix,input_hash,inputs,model_version:model_versions(version)')
+    .select('id,fixture_id,snapshot_at,horizon,lambda_home,lambda_away,score_matrix')
     .in('fixture_id', ids)
     .order('snapshot_at', { ascending: false })
   for (const s of snaps ?? []) {
     if (out.has(s.fixture_id)) continue
-    const inputs = (s.inputs ?? {}) as Row
     out.set(s.fixture_id, {
       id: s.id, snapshotAt: s.snapshot_at, horizon: s.horizon, lambdaHome: Number(s.lambda_home), lambdaAway: Number(s.lambda_away),
-      matrix: matrix(s.score_matrix), inputHash: s.input_hash, modelVersion: (one(s.model_version) as Row)?.version ?? '—', x12: null,
-      selection: inputs.selection ?? null, inputs,
+      matrix: matrix(s.score_matrix), inputHash: '', modelVersion: '', x12: null, selection: null, inputs: {},
     })
   }
   const snapIds = [...out.values()].map((s) => s.id)
@@ -77,6 +92,18 @@ async function snapshotsFor(ids: number[]): Promise<Map<number, SnapshotVM>> {
       bySnap.set(p.snapshot_id, x)
     }
     for (const s of out.values()) s.x12 = bySnap.get(s.id) ?? null
+    if ((await viewer()).admin) {
+      const { data: tech } = await (await adminDb()).from('prediction_snapshots').select('id,inputs,input_hash,model_version:model_versions(version)').in('id', snapIds)
+      const byId = new Map((tech ?? []).map((t: Row) => [t.id, t]))
+      for (const s of out.values()) {
+        const t = byId.get(s.id) as Row
+        if (!t) continue
+        s.inputs = t.inputs ?? {}
+        s.inputHash = t.input_hash
+        s.modelVersion = (one(t.model_version) as Row)?.version ?? ''
+        s.selection = (t.inputs ?? {}).selection ?? null
+      }
+    }
   }
   return out
 }
@@ -90,25 +117,39 @@ export async function marketDefinitions(): Promise<Map<string, MarketDefVM>> {
   return marketNames
 }
 
+/** Picks per snapshot. Members get the plain-language explanation; admins get the technical one (method, calibration, backtest). */
 async function picksFor(snapIds: string[]): Promise<Map<string, PickVM[]>> {
   const out = new Map<string, PickVM[]>()
   if (!snapIds.length) return out
   const sb = await createClient()
   const defs = await marketDefinitions()
-  const { data } = await sb.from('smart_picks').select('id,snapshot_id,rank,market_id,outcome_key,probability,reliability,confidence,lift,score,reasons,outcome:pick_outcomes(result)').in('snapshot_id', snapIds).order('rank')
+  const { data } = await sb.from('smart_picks').select(PICK_COLS).in('snapshot_id', snapIds).order('rank')
+  const tech = new Map<string, Row>()
+  if ((await viewer()).admin && data?.length) {
+    const { data: t } = await (await adminDb()).from('smart_picks').select('id,score,reasons').in('id', data.map((p: Row) => p.id))
+    for (const r of t ?? []) tech.set(r.id, r)
+  }
   for (const p of data ?? []) {
-    const r = (p.reasons ?? {}) as Row
+    const pub = (p.public_reasons ?? {}) as Row
+    const t = tech.get(p.id)
+    const tr = (t?.reasons ?? {}) as Row
     const def = defs.get(p.market_id)
     const list = out.get(p.snapshot_id) ?? []
+    const interval = (pub.interval ?? tr.interval ?? null) as number[] | null
     list.push({
       id: p.id, rank: p.rank, market: p.market_id, marketName: def?.name ?? p.market_id, category: def?.category ?? 'other', outcome: p.outcome_key,
-      label: r.label ?? p.outcome_key, p: Number(p.probability), reliability: Number(p.reliability), confidence: p.confidence, lift: Number(p.lift),
-      score: Number(p.score), interval: (r.interval ?? [p.probability, p.probability]).map(Number) as [number, number], reasons: r.reasons ?? [],
+      label: pub.label ?? tr.label ?? '', p: Number(p.probability), reliability: Number(p.reliability), confidence: p.confidence, lift: Number(p.lift),
+      score: t ? Number(t.score) : 0, interval: interval ? (interval.map(Number) as [number, number]) : null, reasons: t ? (tr.reasons ?? []) : (pub.reasons ?? []),
       result: (one(p.outcome) as Row)?.result ?? null,
     })
     out.set(p.snapshot_id, list)
   }
   return out
+}
+
+/** Picks published before the member-safe explanations existed have no stored label: build it from the market and teams. */
+function labelPicks(f: FixtureVM) {
+  for (const p of f.picks ?? []) if (!p.label) p.label = outcomeLabel(p.market, p.outcome, f.home.short, f.away.short)
 }
 
 export async function getFixtures(opts: { from: string; to: string; competition?: string; withPicks?: boolean; limit?: number }): Promise<FixtureVM[]> {
@@ -122,7 +163,10 @@ export async function getFixtures(opts: { from: string; to: string; competition?
   fx.forEach((f) => (f.snapshot = snaps.get(f.id)))
   if (opts.withPicks) {
     const picks = await picksFor([...snaps.values()].map((s) => s.id))
-    fx.forEach((f) => (f.picks = f.snapshot ? (picks.get(f.snapshot.id) ?? []) : []))
+    fx.forEach((f) => {
+      f.picks = f.snapshot ? (picks.get(f.snapshot.id) ?? []) : []
+      labelPicks(f)
+    })
   }
   return fx
 }
@@ -134,17 +178,27 @@ export async function getFixture(id: number): Promise<(FixtureVM & { outcomes: O
   const f = fixture(data)
   const snaps = await snapshotsFor([id])
   f.snapshot = snaps.get(id)
+  const admin = (await viewer()).admin
   let outcomes: OutcomeVM[] = []
   if (f.snapshot) {
     f.picks = (await picksFor([f.snapshot.id])).get(f.snapshot.id) ?? []
-    const { data: probs } = await sb.from('market_outcome_probabilities').select('market_id,outcome_key,probability,base_rate,reliability,completeness,status,breakdown').eq('snapshot_id', f.snapshot.id)
-    outcomes = (probs ?? []).map((p: Row) => ({
-      market: p.market_id, outcome: p.outcome_key, label: p.breakdown?.label ?? p.outcome_key, p: Number(p.probability), base: p.base_rate != null ? Number(p.base_rate) : null,
-      reliability: p.reliability, completeness: p.completeness, status: p.status, reason: p.breakdown?.reason ?? null,
-    }))
+    labelPicks(f)
+    const { data: probs } = await sb.from('market_outcome_probabilities').select('market_id,outcome_key,probability,base_rate,status').eq('snapshot_id', f.snapshot.id)
+    const tech = new Map<string, Row>()
+    if (admin) {
+      const { data: t } = await (await adminDb()).from('market_outcome_probabilities').select('market_id,outcome_key,reliability,completeness,breakdown').eq('snapshot_id', f.snapshot.id)
+      for (const r of t ?? []) tech.set(`${r.market_id}|${r.outcome_key}`, r)
+    }
+    outcomes = (probs ?? []).map((p: Row) => {
+      const t = tech.get(`${p.market_id}|${p.outcome_key}`)
+      return {
+        market: p.market_id, outcome: p.outcome_key, label: outcomeLabel(p.market_id, p.outcome_key, f.home.short, f.away.short), p: Number(p.probability),
+        base: p.base_rate != null ? Number(p.base_rate) : null, reliability: t?.reliability ?? null, completeness: t?.completeness ?? null, status: p.status, reason: t?.breakdown?.reason ?? null,
+      }
+    })
   }
-  const { data: inventory } = await sb.from('fixture_data_inventory').select('data_type,available,completeness,source,as_of').eq('fixture_id', id)
-  return { ...f, outcomes, inventory: inventory ?? [] }
+  const inventory = admin ? ((await sb.from('fixture_data_inventory').select('data_type,available,completeness,source,as_of').eq('fixture_id', id)).data ?? []) : []
+  return { ...f, outcomes, inventory }
 }
 
 export async function getTeamResults(teamId: number, before: string, limit = 6): Promise<FixtureVM[]> {
@@ -259,7 +313,7 @@ export async function getHistory(limit = 200) {
   const sb = await createClient()
   const defs = await marketDefinitions()
   const { data } = await sb.from('smart_picks')
-    .select(`id,snapshot_id,rank,market_id,outcome_key,probability,confidence,published_at,reasons,outcome:pick_outcomes(result,settled_at),fixture:fixtures(${FIXTURE_COLS})`)
+    .select(`id,snapshot_id,rank,market_id,outcome_key,probability,confidence,published_at,public_reasons,outcome:pick_outcomes(result,settled_at),fixture:fixtures(${FIXTURE_COLS})`)
     .order('published_at', { ascending: false }).limit(limit * 3)
   const rows = data ?? []
   const fixtureIds = [...new Set(rows.map((p: Row) => p.fixture?.id).filter(Boolean))]
@@ -272,7 +326,7 @@ export async function getHistory(limit = 200) {
     .filter((p: Row) => latest.get(p.fixture?.id) === p.snapshot_id)
     .slice(0, limit)
     .map((p: Row) => ({
-      id: p.id, rank: p.rank, market: defs.get(p.market_id)?.name ?? p.market_id, label: p.reasons?.label ?? p.outcome_key, p: Number(p.probability), confidence: p.confidence,
+      id: p.id, rank: p.rank, market: defs.get(p.market_id)?.name ?? p.market_id, label: p.public_reasons?.label ?? outcomeLabel(p.market_id, p.outcome_key, fixture(p.fixture).home.short, fixture(p.fixture).away.short), p: Number(p.probability), confidence: p.confidence,
       publishedAt: p.published_at, result: (one(p.outcome) as Row)?.result ?? null, fixture: fixture(p.fixture),
     }))
 }
@@ -353,4 +407,19 @@ export async function schemaReady(): Promise<boolean> {
   const sb = await createClient()
   const { error } = await sb.from('sports').select('id').limit(1)
   return !error || (error.code !== 'PGRST205' && error.code !== '42P01')
+}
+
+/** The signed-in member's own access. Sends the one-time "1 day left" reminder when the period is about to end. */
+export async function getMyAccess(): Promise<Access> {
+  const v = await viewer()
+  if (!v.user) return accessFrom(null, false)
+  const sb = await createClient()
+  const { data } = await sb.from('user_access').select('plan,access_until,reminded_at').eq('user_id', v.user.id).maybeSingle()
+  const a = accessFrom(data as Row, v.admin)
+  if (!v.admin && a.active && a.msLeft != null && a.msLeft < 86_400_000 && data && !(data as Row).reminded_at) {
+    const db = createServiceClient()
+    const { count } = await db.from('user_access').update({ reminded_at: new Date().toISOString() }, { count: 'exact' }).eq('user_id', v.user.id).is('reminded_at', null)
+    if (count) await db.from('notifications').insert({ user_id: v.user.id, category: 'system', title: 'Your access ends soon', body: `Your ${a.plan === 'trial' ? 'free trial' : 'access'} ends in less than a day. Contact the AIDICT owner to continue.` })
+  }
+  return a
 }

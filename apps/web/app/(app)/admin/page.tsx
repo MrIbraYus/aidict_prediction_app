@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ShieldCheck } from 'lucide-react'
+import { BarChart3, BookOpenCheck, Database, ShieldCheck, Users } from 'lucide-react'
 import { getAdminOverview, getGates } from '@/lib/data'
 import { relTime } from '@/lib/format'
 import { getUser, isAdmin } from '@/lib/supabase/server'
@@ -19,12 +19,27 @@ export default async function AdminPage() {
   const selection = o.settings.find((s: { key: string }) => s.key === 'selection')?.value as Record<string, number> | undefined
   return (
     <>
-      <PageHeader eyebrow="Owner" title="Admin" description="Workspace controls. Every change is written to the audit log, which cannot be edited or deleted." />
+      <PageHeader eyebrow="Owner" title="Admin" description="Owner controls, visible only to admins. Every change is written to the audit log, which cannot be edited or deleted." />
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Active outcomes" value={gates.filter((g) => g.status === 'active').length} sub={`of ${gates.length} evaluated`} />
         <Kpi label="Open data conflicts" value={o.openConflicts} sub={o.openConflicts ? 'review below' : 'none'} />
         <Kpi label="Sign-up" value={signup ? 'Open' : 'Closed'} sub="new accounts" />
         <Kpi label="Feature flags" value={o.flags.filter((f: { enabled: boolean }) => f.enabled).length} sub={`of ${o.flags.length} on`} />
+      </div>
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {[
+          { href: '/admin/users', icon: Users, title: 'Users', body: 'Deactivate, reactivate or delete accounts; admin rights' },
+          { href: '/providers', icon: Database, title: 'Data status', body: 'Pipeline jobs, data sources and request logs' },
+          { href: '/performance', icon: BarChart3, title: 'Model performance', body: 'Backtests, market gates and calibration' },
+        ].map((x) => (
+          <Link key={x.href} href={x.href} className="card flex items-start gap-3 p-4 transition-transform hover:-translate-y-0.5">
+            <x.icon className="mt-0.5 size-5 text-brand-fg" />
+            <span>
+              <span className="block text-[14px] font-bold text-fg">{x.title}</span>
+              <span className="block text-[12px] text-fg-3">{x.body}</span>
+            </span>
+          </Link>
+        ))}
       </div>
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <Card>
@@ -33,7 +48,7 @@ export default async function AdminPage() {
             <div className="flex items-center gap-4">
               <div className="flex-1">
                 <div className="text-[13px] font-bold">Allow new sign-ups</div>
-                <div className="text-[12px] text-fg-3">Turn on briefly to let a tester create an account, then turn it off again. New accounts are members, not admins.</div>
+                <div className="text-[12px] text-fg-3">When on, anyone can create a free member account. New accounts are always members, never admins.</div>
               </div>
               <SignupSwitch open={signup} />
             </div>
@@ -104,6 +119,18 @@ export default async function AdminPage() {
               </tbody>
             </Table>
           )}
+        </Card>
+        <Card className="xl:col-span-2">
+          <CardHeader title="Methodology" icon={<BookOpenCheck className="size-4 text-brand-fg" />} eyebrow="Owner only · never shown to members" />
+          <ol className="grid gap-3 p-5 text-[12.5px] text-fg-2 md:grid-cols-2">
+            <li><b className="text-fg">Goals model (1.1.0).</b> Dixon–Coles attack/defence ratings (ξ = 0.0019/day, 3-year window, low-score correction) blended 50/50 in log space with shots-on-target ratings × goals per shot on target.</li>
+            <li><b className="text-fg">Markets.</b> Every goal market is summed from one score matrix; goal-order markets enumerate every scoring sequence (Bundesliga goal minutes).</li>
+            <li><b className="text-fg">Corners.</b> Team corner ratings (Poisson GLM with intercept and home advantage) with negative-binomial over-dispersion fitted per league.</li>
+            <li><b className="text-fg">Calibration.</b> Platt scaling per league, fitted out-of-fold on walk-forward predictions only.</li>
+            <li><b className="text-fg">Gates.</b> n ≥ 1,000 out-of-sample, bootstrap 95% CI of log loss vs base rate below zero, ECE ≤ 0.03 (0.04 three-way), two consecutive weekly passes.</li>
+            <li><b className="text-fg">Selection.</b> p ≥ 0.60, reliability ≥ 0.62, lift ≥ 3 pts, base ≤ 85%, φ ≤ 0.5, one outcome per market, max 5. Score = 0.45p + 0.30 reliability + 0.25 lift/0.2.</li>
+          </ol>
+          <p className="px-5 pb-4 text-[11px] text-fg-3">Full evidence: documentation/MARKET_RESEARCH.md and BACKTEST_RESULTS.md in the repository.</p>
         </Card>
         <Card className="xl:col-span-2">
           <CardHeader title="Audit log" eyebrow="Latest 25" />
