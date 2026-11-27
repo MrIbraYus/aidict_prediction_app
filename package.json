@@ -12,9 +12,18 @@
   },
   "scripts": {
     "db:test": "node supabase/tests/run-migrations.mjs",
-    "prototype": "npm --prefix prototype run dev"
+    "prototype": "npm --prefix prototype run dev",
+    "db:bundle": "node supabase/build-apply-all.mjs",
+    "db:apply": "services/.venv/Scripts/python services/scripts/apply_schema.py",
+    "web:dev": "npm run dev -w @aidict/web",
+    "web:build": "npm run build -w @aidict/web",
+    "db:migrate": "services/.venv/Scripts/python services/scripts/migrate.py"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.6.0"
+    "@electric-sql/pglite": "^0.6.0",
+    "@electric-sql/pglite-socket": "^0.3.0"
+  },
+  "dependencies": {
+    "web-push": "^4.0.0"
   }
 }

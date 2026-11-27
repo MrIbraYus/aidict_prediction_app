@@ -29,9 +29,26 @@ type AppState = {
 
 let toastId = 0
 
+const THEME_KEY = 'aidict.theme'
+function savedTheme(): Theme {
+  try {
+    const t = localStorage.getItem(THEME_KEY)
+    return t === 'light' || t === 'system' || t === 'dark' ? t : 'dark'
+  } catch {
+    return 'dark'
+  }
+}
+export function persistTheme(t: Theme) {
+  try {
+    localStorage.setItem(THEME_KEY, t)
+  } catch {
+    /* storage unavailable: choice still applies for this visit */
+  }
+}
+
 export const useApp = create<AppState>((set, get) => ({
   authed: true,
-  theme: 'dark',
+  theme: savedTheme(),
   oddsFormat: 'decimal',
   probabilityFormat: 'percent',
   timeZone: 'UTC (GMT+0)',
@@ -46,7 +63,10 @@ export const useApp = create<AppState>((set, get) => ({
   readNotifications: [],
   toasts: [],
   hideValue: false,
-  set: (p) => set(p),
+  set: (p) => {
+    if (p.theme) persistTheme(p.theme)
+    set(p)
+  },
   toggleSaved: (id) => {
     const on = get().saved.includes(id)
     set({ saved: on ? get().saved.filter((x) => x !== id) : [...get().saved, id] })

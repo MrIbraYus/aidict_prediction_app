@@ -77,7 +77,7 @@ export function Logo({ compact, className }: { compact?: boolean; className?: st
   return compact ? (
     <img src="./brand/aidict-icon.png" alt="AIDICT" className={cx('size-9 rounded-[10px]', className)} />
   ) : (
-    <img src="./brand/aidict-logo.png" alt="AIDICT" className={cx('h-[30px] w-auto [[data-theme=light]_&]:hidden', className)} />
+    <img src="./brand/aidict-logo.png" alt="AIDICT" className={cx('h-[30px] w-auto [[data-aidict-theme=light]_&]:hidden', className)} />
   )
 }
 
@@ -323,11 +323,11 @@ function PrototypeBar() {
           className="!p-0.5"
         />
         <button
-          onClick={() => set({ theme: theme === 'light' ? 'dark' : 'light' })}
+          onClick={() => set({ theme: theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark' })}
           className="hidden h-7 items-center gap-1 rounded-lg border border-line px-2 text-fg-2 hover:text-fg sm:flex"
-          aria-label="Toggle theme"
+          aria-label="Change theme (dark, light, system)"
         >
-          <Palette className="size-3.5" /> {theme === 'light' ? 'Light' : 'Dark'}
+          <Palette className="size-3.5" /> {theme === 'system' ? 'System' : theme === 'light' ? 'Light' : 'Dark'}
         </button>
       </div>
     </div>

@@ -581,7 +581,7 @@ function Pitch({ home, away, homeTeam, awayTeam }: { home: { formation: string; 
     )
   }
   return (
-    <div className="relative mx-auto aspect-[68/100] w-full max-w-[440px] overflow-hidden rounded-2xl border border-line bg-[linear-gradient(180deg,#1d2a1f_0%,#18231a_100%)] [[data-theme=light]_&]:bg-[linear-gradient(180deg,#e7efe6_0%,#dde8dc_100%)]">
+    <div className="relative mx-auto aspect-[68/100] w-full max-w-[440px] overflow-hidden rounded-2xl border border-line bg-[linear-gradient(180deg,#1d2a1f_0%,#18231a_100%)] [[data-aidict-theme=light]_&]:bg-[linear-gradient(180deg,#e7efe6_0%,#dde8dc_100%)]">
       <svg viewBox="0 0 68 100" className="absolute inset-0 size-full" preserveAspectRatio="none" aria-hidden>
         <g fill="none" stroke="currentColor" strokeOpacity=".18" strokeWidth=".35" className="text-fg">
           <rect x="2" y="2" width="64" height="96" rx="1" />

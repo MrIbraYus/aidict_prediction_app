@@ -1,0 +1,55 @@
+name: Data pipeline
+
+# Keeps the live database current: fixtures/results, predictions, settlement and weekly market gates.
+# Requires repository secrets SUPABASE_DB_URL (Session pooler string) and FOOTBALL_DATA_ORG_TOKEN.
+on:
+  workflow_dispatch:
+    inputs:
+      job: { description: "sync | predict | settle | gates | all", default: "all", required: true }
+  schedule:
+    - cron: "17 * * * *"        # hourly: sync fixtures/results, then publish due snapshots (T-7d, T-24h, T-2h)
+    - cron: "30 5,23 * * *"     # settle picks
+    - cron: "0 4 * * 1"         # weekly backtest → market gates
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aidict-pipeline
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults: { run: { working-directory: services } }
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      FOOTBALL_DATA_ORG_TOKEN: ${{ secrets.FOOTBALL_DATA_ORG_TOKEN }}
+      PYTHONPATH: data-engine:prediction-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip, cache-dependency-path: services/pyproject.toml }
+      - run: pip install -e ".[db]"
+      - name: Decide what to run
+        id: pick
+        run: |
+          J="${{ github.event.inputs.job }}"
+          if [ -z "$J" ]; then
+            case "${{ github.event.schedule }}" in
+              "17 * * * *") J="sync predict" ;;
+              "30 5,23 * * *") J="sync settle" ;;
+              "0 4 * * 1") J=gates ;;
+            esac
+          fi
+          [ "$J" = "all" ] && J="sync gates predict settle"
+          echo "jobs=$J" >> "$GITHUB_OUTPUT"
+      - if: contains(steps.pick.outputs.jobs, 'sync')
+        run: python -m aidict_data.jobs.sync_current
+      - if: contains(steps.pick.outputs.jobs, 'gates')
+        run: python -m aidict_engine.jobs.gates
+      - if: contains(steps.pick.outputs.jobs, 'predict')
+        run: python -m aidict_engine.jobs.predict
+      - if: contains(steps.pick.outputs.jobs, 'settle')
+        run: python -m aidict_engine.jobs.settle

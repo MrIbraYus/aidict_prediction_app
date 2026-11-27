@@ -19,57 +19,11 @@ sys.stdout.reconfigure(encoding="utf-8")  # Windows consoles default to cp1252
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / "services" / "data-engine"), str(ROOT / "services" / "prediction-engine")]
 
-from aidict_data.normalise import canonical  # noqa: E402
-from aidict_data.providers import FootballDataUkAdapter, OpenFootballAdapter  # noqa: E402
-from aidict_data.types import Ok  # noqa: E402
 from aidict_engine.backtest import Config, run, summarize  # noqa: E402
+from aidict_engine.history import load, seasons_between  # noqa: E402
+from aidict_engine.market_eval import evaluate as evaluate_markets  # noqa: E402
 
 LEAGUE_NAMES = {"PL": "Premier League", "BL1": "Bundesliga", "PD": "LaLiga", "SA": "Serie A", "FL1": "Ligue 1", "ELC": "Championship"}
-
-
-def seasons_between(first: str, last: str) -> list[str]:
-    a, b = int(first[:4]), int(last[:4])
-    return [f"{y}-{str(y + 1)[2:]}" for y in range(a, b + 1)]
-
-
-def load(league: str, seasons: list[str]) -> tuple[pd.DataFrame, dict]:
-    of, uk = OpenFootballAdapter(), FootballDataUkAdapter()
-    rows, unmatched, missing_odds = [], set(), 0
-    stats = {"openfootball_matches": 0, "with_odds": 0}
-    for s in seasons:
-        res = of.get_results(league, s)
-        if not isinstance(res, Ok):
-            print(f"  ! OpenFootball {league} {s}: {getattr(res, 'error', getattr(res, 'reason', res))}")
-            continue
-        odds_by_key: dict = {}
-        q = uk.get_odds(league, s)
-        if isinstance(q, Ok):
-            for o in q.data:
-                key = (canonical(o.home), canonical(o.away), o.kickoff.date())
-                odds_by_key.setdefault(key, {})[(o.market, o.selection)] = o.decimal_odds
-        for f in res.data:
-            stats["openfootball_matches"] += 1
-            h, a = canonical(f.home), canonical(f.away)
-            odds_teams = {k[0] for k in odds_by_key} | {k[1] for k in odds_by_key}
-            if odds_by_key:
-                unmatched.update(n for n, c in ((f.home, h), (f.away, a)) if c not in odds_teams)
-            od = odds_by_key.get((h, a, f.kickoff.date())) or odds_by_key.get((h, a, (f.kickoff.astimezone(timezone.utc)).date()))
-            if od is None:
-                # kickoff dates can differ by a day across sources (time zones / late listings)
-                from datetime import timedelta
-                od = odds_by_key.get((h, a, f.kickoff.date() - timedelta(days=1))) or odds_by_key.get((h, a, f.kickoff.date() + timedelta(days=1)))
-            if od:
-                stats["with_odds"] += 1
-            else:
-                missing_odds += 1
-            rows.append({"season": s, "kickoff": f.kickoff, "home": h, "away": a, "gh": f.ft[0], "ga": f.ft[1],
-                         "mkt_h": (od or {}).get(("1x2", "H")), "mkt_d": (od or {}).get(("1x2", "D")), "mkt_a": (od or {}).get(("1x2", "A")),
-                         "mkt_over": (od or {}).get(("ou25", "over")), "mkt_under": (od or {}).get(("ou25", "under"))})
-    df = pd.DataFrame(rows)
-    df["kickoff"] = pd.to_datetime(df.kickoff, utc=True)
-    stats["missing_odds"] = missing_odds
-    stats["unmatched_names"] = sorted(unmatched)
-    return df, stats
 
 
 def fmt(x, d=3):
@@ -113,6 +67,20 @@ def write_report(results: dict, args) -> Path:
         for label, key in (("Over/Under 2.5", "dc_vs_base_ou25"), ("BTTS", "dc_vs_base_btts")):
             d, lo, hi = s[key]
             lines += ["", f"{label} vs base rate, log-loss difference: {d:+.4f} (95% CI {lo:+.4f} to {hi:+.4f})."]
+        lines += ["", "### Market-by-market gates (each outcome evaluated on its own)", "",
+                  f"Goal-order data: {r['stats'].get('with_goal_order', 0):,} matches with a real scoring sequence (OpenLigaDB). Production verdict = Platt-calibrated probabilities (fitted only on earlier test seasons), evaluated on seasons 2–7; raw model shown for reference.", "",
+                  "| Market · outcome | n (cal.) | Observed | Log loss cal. / raw / base | ECE raw → cal. (same matches) | Raw gate (all seasons) | **Verdict** |", "|---|---:|---:|---|---|:---:|---|"]
+        for mk in s["markets"]:
+            if not mk.get("raw"):
+                lines.append(f"| {mk['label']} | 0 | — | — | — | — | — | {mk.get('note', '')} |")
+                continue
+            rw, cb = mk["raw"], mk["calibrated"]
+            v = lambda g: "✅" if g and g["pass"] else "❌"
+            if not cb:
+                lines.append(f"| {mk['label']} | — | {rw['observed'] * 100:.1f}% | — | — | {v(rw['gate'])} | Not enough seasons to calibrate |")
+                continue
+            verdict = "**Publishable**" if cb["gate"]["pass"] else "Validating — " + ", ".join(k for k, lab in (("sample", "sample"), ("beats_base", "no edge over base rate"), ("calibration", "calibration")) if not cb["gate"][k] for _ in [0]).replace("beats_base", "no edge over base rate")
+            lines.append(f"| {mk['label']} | {cb['n']:,} | {rw['observed'] * 100:.1f}% | {cb['log_loss']:.3f} / {cb['raw_log_loss_same_rows']:.3f} / {cb['base_log_loss']:.3f} | {cb['raw_ece_same_rows']:.3f} → {cb['ece']:.3f} | {v(rw['gate'])} | {verdict} |")
         lines += ["", "### Calibration — home win (Dixon–Coles)", "", "| Predicted | Observed | n | 95% interval |", "|---:|---:|---:|---|"]
         for b in s["reliability_home"]:
             lines.append(f"| {b['predicted'] * 100:.1f}% | {b['observed'] * 100:.1f}% | {b['n']} | {b['lo'] * 100:.1f}–{b['hi'] * 100:.1f}% |")
@@ -123,7 +91,7 @@ def write_report(results: dict, args) -> Path:
     lines += ["## Reading these results", "",
               "- Beating the base rate shows the model has real information. Matching or approaching closing odds is the hardest benchmark in football; the gap is reported, not hidden.",
               "- Markets are only published when they pass their gate (n ≥ 1,000 out-of-sample, log loss better than base rate with the 95% CI excluding zero, ECE ≤ 0.04 multi-outcome / ≤ 0.03 binary).",
-              "- Gates above are for the RAW model. Production adds an isotonic calibration layer fitted on walk-forward out-of-fold predictions; markets failing only on calibration are re-tested after it.",
+              "- The 1X2/O-U/BTTS gate tables use the RAW model. The market-by-market verdicts use Platt-calibrated probabilities (method fixed in advance, fitted only on earlier seasons) because production applies the same layer.",
               "- Re-run after any model change; results are versioned with the model in `model_evaluations`.", ""]
     out.write_text("\n".join(lines), encoding="utf-8")
     return out
@@ -148,6 +116,7 @@ def main():
         cache.mkdir(parents=True, exist_ok=True)
         bt.to_csv(cache / f"backtest-{league}.csv", index=False)
         summary = summarize(bt)
+        summary["markets"] = evaluate_markets(bt, df)
         results[league] = {"summary": summary, "stats": stats, "seconds": time.time() - t0, "unmatched": stats["unmatched_names"]}
         print(json.dumps({k: {m: round(v["log_loss"], 4) for m, v in summary["x12"].items()} for k in ["x12"]}, indent=1))
     print(f"Report: {write_report(results, args)}")

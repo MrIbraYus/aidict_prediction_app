@@ -65,7 +65,7 @@ export default function App() {
   const set = useApp((s) => s.set)
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme
+    document.documentElement.setAttribute('data-aidict-theme', theme)
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#f5f2f1' : '#0f0d0d')
   }, [theme])
 

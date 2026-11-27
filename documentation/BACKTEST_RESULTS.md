@@ -1,6 +1,6 @@
 # AIDICT — Walk-forward Backtest Results (real data)
 
-**Generated:** 2026-11-26 19:03 UTC by `services/scripts/run_backtest.py`  
+**Generated:** 2026-11-26 20:32 UTC by `services/scripts/run_backtest.py`  
 **Data:** OpenFootball results (CC0), seasons 2016-17 → 2025-26. Closing odds: football-data.co.uk (private use).  
 **Method:** every matchweek from 2019-20 is predicted using only earlier matches (3-season window, time decay ξ = 0.0019/day), then the Dixon–Coles model is refitted. Elo's ordered logit and the base rates are refitted each season on prior seasons only.
 
@@ -50,6 +50,40 @@ Over/Under 2.5 vs base rate, log-loss difference: -0.0055 (95% CI -0.0135 to +0.
 
 BTTS vs base rate, log-loss difference: -0.0010 (95% CI -0.0069 to +0.0049).
 
+### Market-by-market gates (each outcome evaluated on its own)
+
+Goal-order data: 0 matches with a real scoring sequence (OpenLigaDB). Production verdict = Platt-calibrated probabilities (fitted only on earlier test seasons), evaluated on seasons 2–7; raw model shown for reference.
+
+| Market · outcome | n (cal.) | Observed | Log loss cal. / raw / base | ECE raw → cal. (same matches) | Raw gate (all seasons) | **Verdict** |
+|---|---:|---:|---|---|:---:|---|
+| Over 1.5 goals | 2,280 | 78.9% | 0.517 / 0.519 / 0.518 | 0.040 → 0.023 | ❌ | Validating — no edge over base rate |
+| Over 2.5 goals | 2,280 | 55.0% | 0.684 / 0.686 / 0.688 | 0.047 → 0.031 | ❌ | Validating — no edge over base rate, calibration |
+| Over 3.5 goals | 2,280 | 32.3% | 0.632 / 0.633 / 0.635 | 0.039 → 0.031 | ❌ | Validating — no edge over base rate, calibration |
+| Both teams to score | 2,280 | 53.8% | 0.688 / 0.690 / 0.691 | 0.036 → 0.023 | ❌ | Validating — no edge over base rate |
+| Home or draw | 2,280 | 67.1% | 0.577 / 0.575 / 0.638 | 0.016 → 0.015 | ✅ | **Publishable** |
+| Draw or away | 2,280 | 56.6% | 0.613 / 0.611 / 0.686 | 0.016 → 0.018 | ✅ | **Publishable** |
+| Home or away | 2,280 | 76.4% | 0.544 / 0.542 / 0.546 | 0.011 → 0.016 | ✅ | Validating — no edge over base rate |
+| Home −1 (wins by 2+) | 2,280 | 23.5% | 0.487 / 0.485 / 0.545 | 0.017 → 0.015 | ✅ | **Publishable** |
+| Away +1 (away wins or draws) | 2,280 | 56.6% | 0.613 / 0.611 / 0.686 | 0.016 → 0.018 | ✅ | **Publishable** |
+| Home AH 0 (draw no bet; pushes excluded) | 1,446 | 56.9% | 0.575 / 0.571 / 0.681 | 0.026 → 0.035 | ✅ | Validating — calibration |
+| Home AH −0.25 (full win) | 2,280 | 43.4% | 0.613 / 0.611 / 0.686 | 0.016 → 0.018 | ✅ | **Publishable** |
+| Home or Over 2.5 | 2,280 | 70.3% | 0.594 / 0.593 / 0.607 | 0.032 → 0.012 | ✅ | **Publishable** |
+| Home or Under 2.5 | 2,280 | 73.1% | 0.559 / 0.559 / 0.589 | 0.023 → 0.014 | ✅ | **Publishable** |
+| Draw or Over 2.5 | 2,280 | 71.9% | 0.591 / 0.593 / 0.593 | 0.020 → 0.015 | ❌ | Validating — no edge over base rate |
+| Draw or Under 2.5 | 2,280 | 51.8% | 0.689 / 0.690 / 0.693 | 0.044 → 0.026 | ❌ | Validating — no edge over base rate |
+| Away or Over 2.5 | 2,280 | 67.8% | 0.621 / 0.621 / 0.627 | 0.024 → 0.022 | ✅ | Validating — no edge over base rate |
+| Away or Under 2.5 | 2,280 | 65.2% | 0.607 / 0.606 / 0.649 | 0.022 → 0.021 | ✅ | **Publishable** |
+| Home scores first | 0 | — | — | — | — | — | No settlement data (goal order unavailable) |
+| Away scores first | 0 | — | — | — | — | — | No settlement data (goal order unavailable) |
+| Any team 2+ goals in a row | 0 | — | — | — | — | — | No settlement data (goal order unavailable) |
+| Any team 3+ goals in a row | 0 | — | — | — | — | — | No settlement data (goal order unavailable) |
+| Home 2+ goals in a row | 0 | — | — | — | — | — | No settlement data (goal order unavailable) |
+| Home 3+ goals in a row | 0 | — | — | — | — | — | No settlement data (goal order unavailable) |
+| Away 2+ goals in a row | 0 | — | — | — | — | — | No settlement data (goal order unavailable) |
+| Home 1UP (ever leads by 1) | 0 | — | — | — | — | — | No settlement data (goal order unavailable) |
+| Home 2UP (leads by 2 or wins) | 0 | — | — | — | — | — | No settlement data (goal order unavailable) |
+| Home never behind | 0 | — | — | — | — | — | No settlement data (goal order unavailable) |
+
 ### Calibration — home win (Dixon–Coles)
 
 | Predicted | Observed | n | 95% interval |
@@ -77,7 +111,7 @@ BTTS vs base rate, log-loss difference: -0.0010 (95% CI -0.0069 to +0.0049).
 | 2024-25 | 380 | 0.982 | 1.082 |
 | 2025-26 | 380 | 1.027 | 1.085 |
 
-Runtime: 28s · team names without a cross-provider match (alias review): none
+Runtime: 52s · team names without a cross-provider match (alias review): none
 
 ## Bundesliga (BL1)
 
@@ -123,6 +157,40 @@ Over/Under 2.5 vs base rate, log-loss difference: -0.0114 (95% CI -0.0210 to -0.
 
 BTTS vs base rate, log-loss difference: -0.0040 (95% CI -0.0108 to +0.0025).
 
+### Market-by-market gates (each outcome evaluated on its own)
+
+Goal-order data: 2,951 matches with a real scoring sequence (OpenLigaDB). Production verdict = Platt-calibrated probabilities (fitted only on earlier test seasons), evaluated on seasons 2–7; raw model shown for reference.
+
+| Market · outcome | n (cal.) | Observed | Log loss cal. / raw / base | ECE raw → cal. (same matches) | Raw gate (all seasons) | **Verdict** |
+|---|---:|---:|---|---|:---:|---|
+| Over 1.5 goals | 1,836 | 83.6% | 0.448 / 0.449 / 0.452 | 0.021 → 0.013 | ❌ | Validating — no edge over base rate |
+| Over 2.5 goals | 1,836 | 61.3% | 0.659 / 0.659 / 0.671 | 0.032 → 0.014 | ❌ | **Publishable** |
+| Over 3.5 goals | 1,836 | 40.3% | 0.658 / 0.660 / 0.676 | 0.033 → 0.011 | ❌ | **Publishable** |
+| Both teams to score | 1,836 | 59.8% | 0.672 / 0.667 / 0.674 | 0.023 → 0.032 | ❌ | Validating — no edge over base rate, calibration |
+| Home or draw | 1,836 | 68.0% | 0.566 / 0.561 / 0.620 | 0.031 → 0.030 | ✅ | **Publishable** |
+| Draw or away | 1,836 | 56.8% | 0.626 / 0.626 / 0.686 | 0.037 → 0.029 | ❌ | **Publishable** |
+| Home or away | 1,836 | 75.3% | 0.563 / 0.563 / 0.564 | 0.020 → 0.021 | ❌ | Validating — no edge over base rate |
+| Home −1 (wins by 2+) | 1,836 | 25.8% | 0.518 / 0.517 / 0.574 | 0.021 → 0.016 | ✅ | **Publishable** |
+| Away +1 (away wins or draws) | 1,836 | 56.8% | 0.626 / 0.626 / 0.686 | 0.037 → 0.029 | ❌ | **Publishable** |
+| Home AH 0 (draw no bet; pushes excluded) | 1,149 | 57.4% | 0.581 / 0.580 / 0.679 | 0.041 → 0.031 | ❌ | Validating — calibration |
+| Home AH −0.25 (full win) | 1,836 | 43.2% | 0.626 / 0.626 / 0.686 | 0.037 → 0.029 | ❌ | **Publishable** |
+| Home or Over 2.5 | 1,836 | 73.3% | 0.572 / 0.572 / 0.585 | 0.018 → 0.009 | ✅ | **Publishable** |
+| Home or Under 2.5 | 1,836 | 69.9% | 0.566 / 0.563 / 0.604 | 0.018 → 0.018 | ✅ | **Publishable** |
+| Draw or Over 2.5 | 1,836 | 78.2% | 0.523 / 0.522 / 0.528 | 0.015 → 0.006 | ❌ | **Publishable** |
+| Draw or Under 2.5 | 1,836 | 46.6% | 0.683 / 0.683 / 0.692 | 0.032 → 0.022 | ❌ | **Publishable** |
+| Away or Over 2.5 | 1,836 | 71.0% | 0.599 / 0.599 / 0.608 | 0.037 → 0.026 | ❌ | **Publishable** |
+| Away or Under 2.5 | 1,836 | 61.0% | 0.636 / 0.637 / 0.671 | 0.033 → 0.027 | ✅ | **Publishable** |
+| Home scores first | 1,735 | 51.9% | 0.656 / 0.655 / 0.694 | 0.030 → 0.030 | ✅ | **Publishable** |
+| Away scores first | 1,735 | 43.1% | 0.645 / 0.644 / 0.684 | 0.029 → 0.033 | ✅ | **Publishable** |
+| Any team 2+ goals in a row | 1,735 | 64.8% | 0.642 / 0.643 / 0.651 | 0.027 → 0.012 | ✅ | **Publishable** |
+| Any team 3+ goals in a row | 1,735 | 29.5% | 0.583 / 0.583 / 0.602 | 0.012 → 0.020 | ✅ | **Publishable** |
+| Home 2+ goals in a row | 1,735 | 41.4% | 0.636 / 0.635 / 0.681 | 0.027 → 0.029 | ✅ | **Publishable** |
+| Home 3+ goals in a row | 1,735 | 17.8% | 0.430 / 0.429 / 0.473 | 0.021 → 0.020 | ✅ | **Publishable** |
+| Away 2+ goals in a row | 1,735 | 31.6% | 0.586 / 0.585 / 0.621 | 0.024 → 0.011 | ✅ | **Publishable** |
+| Home 1UP (ever leads by 1) | 1,735 | 60.9% | 0.618 / 0.615 / 0.666 | 0.030 → 0.019 | ✅ | **Publishable** |
+| Home 2UP (leads by 2 or wins) | 1,735 | 45.5% | 0.629 / 0.628 / 0.690 | 0.034 → 0.034 | ❌ | Validating — calibration |
+| Home never behind | 1,735 | 49.2% | 0.645 / 0.643 / 0.696 | 0.026 → 0.023 | ✅ | **Publishable** |
+
 ### Calibration — home win (Dixon–Coles)
 
 | Predicted | Observed | n | 95% interval |
@@ -150,11 +218,11 @@ BTTS vs base rate, log-loss difference: -0.0040 (95% CI -0.0108 to +0.0025).
 | 2024-25 | 306 | 1.024 | 1.093 |
 | 2025-26 | 306 | 0.976 | 1.071 |
 
-Runtime: 26s · team names without a cross-provider match (alias review): none
+Runtime: 62s · team names without a cross-provider match (alias review): none
 
 ## Reading these results
 
 - Beating the base rate shows the model has real information. Matching or approaching closing odds is the hardest benchmark in football; the gap is reported, not hidden.
 - Markets are only published when they pass their gate (n ≥ 1,000 out-of-sample, log loss better than base rate with the 95% CI excluding zero, ECE ≤ 0.04 multi-outcome / ≤ 0.03 binary).
-- Gates above are for the RAW model. Production adds an isotonic calibration layer fitted on walk-forward out-of-fold predictions; markets failing only on calibration are re-tested after it.
+- The 1X2/O-U/BTTS gate tables use the RAW model. The market-by-market verdicts use Platt-calibrated probabilities (method fixed in advance, fitted only on earlier seasons) because production applies the same layer.
 - Re-run after any model change; results are versioned with the model in `model_evaluations`.

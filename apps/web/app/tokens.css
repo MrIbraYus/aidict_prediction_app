@@ -1,0 +1,123 @@
+/*
+ * AIDICT design tokens — single source of truth for colour, type, radius, elevation and motion.
+ * Ported unchanged into apps/web at Stage 3.
+ * Brand crimson #B50F31 sampled from the supplied logo/icon.
+ */
+
+:root,
+:root[data-aidict-theme='dark'] {
+  color-scheme: dark;
+
+  /* Surfaces — warm charcoal, never pure black (matches UI reference) */
+  --bg: #0f0d0d;
+  --bg-elev: #141111;
+  --surface-1: #1a1717;
+  --surface-2: #221e1e;
+  --surface-3: #2b2626;
+  --surface-inset: #121010;
+  --overlay: rgba(8, 6, 6, 0.72);
+
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.13);
+  --highlight: rgba(255, 255, 255, 0.05); /* inner top highlight on cards */
+
+  /* Text */
+  --text: #f6f2f1;
+  --text-2: #bcb3b1;
+  --text-3: #857c7a;
+  --text-inverse: #140f0f;
+
+  /* Brand */
+  --brand: #b50f31;            /* logo crimson — fills, active states */
+  --brand-hover: #c9163c;
+  --brand-fg: #f2546f;         /* crimson tuned for text/icons on dark (5.3:1) */
+  --brand-soft: rgba(181, 15, 49, 0.16);
+  --brand-glow: rgba(232, 34, 72, 0.55);
+
+  /* Semantic */
+  --live: #3ee46f;
+  --live-soft: rgba(62, 228, 111, 0.14);
+  --win: #2fbf71;
+  --draw: #8f8684;
+  --loss: #e5484d;
+  --gold: #f5b83d;
+  --info: #6fa8ff;
+  --warn: #f5a524;
+  --danger: #f04452;
+  --success: #2fbf71;
+  --info-soft: rgba(111, 168, 255, 0.14);
+  --warn-soft: rgba(245, 165, 36, 0.14);
+  --danger-soft: rgba(240, 68, 82, 0.14);
+  --success-soft: rgba(47, 191, 113, 0.14);
+
+  /* Outcome encoding (home / draw / away) */
+  --home: #f2546f;
+  --away: #6fa8ff;
+  --neutral: #a79e9c;
+
+  /* Chart series */
+  --series-1: #f2546f;
+  --series-2: #6fa8ff;
+  --series-3: #f5b83d;
+  --series-4: #3fd0a4;
+  --series-5: #b28dff;
+  --series-6: #a79e9c;
+  --grid: rgba(255, 255, 255, 0.06);
+
+  /* Elevation */
+  --shadow-card: 0 1px 0 0 var(--highlight) inset, 0 10px 30px -12px rgba(0, 0, 0, 0.6);
+  --shadow-pop: 0 1px 0 0 var(--highlight) inset, 0 24px 60px -16px rgba(0, 0, 0, 0.75);
+  --shadow-glow: 0 0 0 1px rgba(181, 15, 49, 0.55), 0 10px 30px -10px var(--brand-glow);
+  --card-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0%, rgba(255, 255, 255, 0) 60%);
+}
+
+:root[data-aidict-theme='light'] {
+  color-scheme: light;
+  --bg: #f5f2f1;
+  --bg-elev: #fbf9f8;
+  --surface-1: #ffffff;
+  --surface-2: #f6f3f2;
+  --surface-3: #ece7e6;
+  --surface-inset: #f1edec;
+  --overlay: rgba(20, 12, 12, 0.42);
+  --border: rgba(40, 20, 20, 0.09);
+  --border-strong: rgba(40, 20, 20, 0.16);
+  --highlight: rgba(255, 255, 255, 0.9);
+  --text: #1b1515;
+  --text-2: #594f4d;
+  --text-3: #8a807e;
+  --text-inverse: #ffffff;
+  --brand: #b50f31;
+  --brand-hover: #9c0c2a;
+  --brand-fg: #b50f31;
+  --brand-soft: rgba(181, 15, 49, 0.09);
+  --brand-glow: rgba(181, 15, 49, 0.3);
+  --live: #12a347;
+  --live-soft: rgba(18, 163, 71, 0.12);
+  --win: #16955a;
+  --draw: #8a807e;
+  --loss: #d13438;
+  --gold: #d99a12;
+  --info: #2f6fdb;
+  --warn: #c27c00;
+  --danger: #d13438;
+  --success: #16955a;
+  --info-soft: rgba(47, 111, 219, 0.1);
+  --warn-soft: rgba(194, 124, 0, 0.12);
+  --danger-soft: rgba(209, 52, 56, 0.1);
+  --success-soft: rgba(22, 149, 90, 0.1);
+  --home: #c4183d;
+  --away: #2f6fdb;
+  --neutral: #8a807e;
+  --series-1: #c4183d;
+  --series-2: #2f6fdb;
+  --series-3: #d99a12;
+  --series-4: #12997a;
+  --series-5: #7b55d6;
+  --series-6: #8a807e;
+  --grid: rgba(40, 20, 20, 0.08);
+  --shadow-card: 0 1px 2px rgba(40, 20, 20, 0.06), 0 8px 24px -14px rgba(40, 20, 20, 0.18);
+  --shadow-pop: 0 2px 6px rgba(40, 20, 20, 0.08), 0 24px 60px -20px rgba(40, 20, 20, 0.3);
+  --shadow-glow: 0 0 0 1px rgba(181, 15, 49, 0.45), 0 10px 26px -12px var(--brand-glow);
+  --card-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0) 100%);
+}

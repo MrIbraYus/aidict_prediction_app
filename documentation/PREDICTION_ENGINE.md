@@ -97,7 +97,31 @@ Confidence shown to you: **High** ≥ 80 · **Medium** ≥ 66 · **Low** below t
 - Only data timestamped before the prediction time is used (feature views take `as_of`).
 - Metrics per market and per competition: Brier, log loss, ECE with reliability diagram, hit rate, n with 95% intervals, compared with the base rate (and market odds where they exist).
 - **Gates:** n ≥ 1,000 out-of-sample, log loss better than the base rate (95% CI), ECE ≤ 0.03 (binary) / ≤ 0.04 (multi-outcome and handicap). Accuracy on small samples never qualifies.
+- **Gates apply per outcome and line × competition**, not per market name. Real data shows the same market can pass on one line and fail on another (e.g. Asian Handicap −0.25 passes while AH 0 fails calibration).
+- **Calibration layer (fixed in advance):** Platt scaling (logistic regression on logit p), fitted only on earlier out-of-sample seasons. Isotonic regression was tried first and rejected: it overfits a few hundred matches per season and made calibration worse.
+- **Persistence rule:** with ~26 outcomes × several competitions tested weekly, some passes will happen by chance. An outcome is published only after passing in **two consecutive weekly backtests**, and is withdrawn after failing twice in a row.
 - Live tracking: every published pick is an immutable snapshot, settled automatically. Performance → Markets shows each market over time, by competition.
+
+### First real verdicts (2026-11-26, `BACKTEST_RESULTS.md`)
+Walk-forward 2019-20 → 2025-26, Platt-calibrated, verdict on seasons 2–7 (n ≈ 2,280 PL / 1,836 BL1).
+
+| Group | Premier League | Bundesliga |
+|---|---|---|
+| 1X2 | ✅ (beats base rate, 0.021 behind closing odds) | ✅ (0.025 behind closing odds) |
+| Double Chance 1X / X2 | ✅ / ✅ | ✅ / ✅ |
+| Double Chance 12 | ❌ no edge | ❌ no edge |
+| Handicap −1 / +1 | ✅ / ✅ | ✅ / ✅ |
+| Asian Handicap −0.25 / 0 | ✅ / ❌ calibration | ✅ / ❌ calibration |
+| Over/Under 1.5 / 2.5 / 3.5 | ❌ / ❌ / ❌ | ❌ / ✅ / ✅ |
+| BTTS | ❌ | ❌ |
+| Combined with a result leg (Home or O/U, Away or U2.5) | ✅ (Away or Over ❌) | ✅ all |
+| Draw or Over / Under 2.5 | ❌ / ❌ | ✅ / ✅ |
+| 1st Goal (home / away) | no goal-order data | ✅ / ✅ |
+| Goals in a row (5 markets) | no goal-order data | ✅ all 5 |
+| 1UP / Never Down / 2UP | no goal-order data | ✅ / ✅ / ❌ calibration (still blocked until settlement rules are verified) |
+| Corners, player markets | not yet backtested (corners model next; player data unavailable) | same |
+
+**Takeaway:** markets driven by the result are publishable. Pure goal-total markets (Over/Under, BTTS) carry little signal beyond base rates in the Premier League with results-only inputs. The next modelling step is shots-on-target features from football-data.co.uk, re-tested under the same rules. The prototype's market statuses were design samples; production statuses come from these backtests (`market_competition_status`).
 
 ## 7. Extensibility
 Each market is a module:

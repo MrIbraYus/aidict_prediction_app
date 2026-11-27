@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 @import './tokens.css';
 
-@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+@custom-variant dark (&:where([data-aidict-theme='dark'], [data-aidict-theme='dark'] *));
 
 @theme inline {
   --color-bg: var(--bg);
@@ -138,7 +138,7 @@
       radial-gradient(60% 50% at 50% 100%, rgba(181, 15, 49, 0.18) 0%, rgba(181, 15, 49, 0) 70%),
       var(--surface-1);
   }
-  :root[data-theme='light'] .hero-stage {
+  :root[data-aidict-theme='light'] .hero-stage {
     background:
       radial-gradient(60% 50% at 50% 100%, rgba(181, 15, 49, 0.07) 0%, rgba(181, 15, 49, 0) 70%),
       var(--surface-1);

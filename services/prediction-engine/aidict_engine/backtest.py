@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from . import dixon_coles
+from .ratings import fit_counts
 from .elo import Elo, OrderedLogit
 from .markets import btts, one_x_two, over
 from .metrics import (binary_brier, binary_log_loss, bootstrap_diff, brier, ece, ece_multiclass, log_loss, per_match_log_loss, reliability, rps)
@@ -60,11 +61,20 @@ def run(matches: pd.DataFrame, cfg: Config) -> pd.DataFrame:
         prior = {t: dixon_coles.PROMOTED_PRIOR for t in promoted}
         season_df = df[df.season == season]
         weeks = season_df.groupby(season_df.kickoff.dt.isocalendar().week.astype(int) + 100 * season_df.kickoff.dt.isocalendar().year.astype(int))
+        week_k = None  # corner over-dispersion, estimated once per season from the pre-season window
         for _, wk in sorted(weeks, key=lambda g: g[1].kickoff.min()):
             cutoff = wk.kickoff.min()
             train = df[(df.kickoff < cutoff) & (df.kickoff >= cutoff - timedelta(days=cfg.window_days))]
             age = (cutoff - train.kickoff).dt.total_seconds() / 86400
             model = dixon_coles.fit(list(train.home), list(train.away), train.gh.values, train.ga.values, age.values, cfg.xi, cfg.l2, prior)
+            sot_model, conv = _count_model(train, "sot_h", "sot_a", cutoff, cfg, prior)
+            if sot_model is not None:  # goals per shot on target (home, away), same time decay as the ratings
+                st = train[train.sot_h.notna() & train.sot_a.notna()]
+                w = np.exp(-cfg.xi * (cutoff - st.kickoff).dt.total_seconds().values / 86400)
+                conv = (float((w * st.gh).sum() / (w * st.sot_h).sum()), float((w * st.ga).sum() / (w * st.sot_a).sum()))
+            cor_model, _ = _count_model(train, "cor_h", "cor_a", cutoff, cfg, prior)
+            if cor_model is not None and week_k is None:
+                week_k = _dispersion(cor_model, train)
             for _, r in wk.iterrows():
                 m = model.matrix(r.home, r.away)
                 ph, pd_, pa = one_x_two(m)
@@ -75,6 +85,15 @@ def run(matches: pd.DataFrame, cfg: Config) -> pd.DataFrame:
                        "elo_h": eh, "elo_d": ed, "elo_a": ea, "base_h": base[0], "base_d": base[1], "base_a": base[2], "base_over25": base_over, "base_btts": base_btts}
                 for k in ("mkt_h", "mkt_d", "mkt_a", "mkt_over", "mkt_under"):
                     row[k] = r.get(k, np.nan)
+                row["goal_seq"] = r.get("goal_seq") if isinstance(r.get("goal_seq"), str) else None
+                for k in ("sot_h", "sot_a", "cor_h", "cor_a"):
+                    row[k] = r.get(k, np.nan)
+                if sot_model is not None:
+                    sh, sa = sot_model.rates(r.home, r.away)
+                    row["lam_sh"], row["lam_sa"] = sh * conv[0], sa * conv[1]  # expected goals implied by expected shots on target
+                if cor_model is not None:
+                    row["lc_h"], row["lc_a"] = cor_model.rates(r.home, r.away)
+                    row["cor_k"] = week_k
                 rows.append(row)
     out = pd.DataFrame(rows)
     # Market-implied probabilities with the bookmaker margin removed proportionally.
@@ -84,6 +103,31 @@ def run(matches: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     io, iu = 1 / out.mkt_over, 1 / out.mkt_under
     out["imp_over25"] = io / (io + iu)
     return out
+
+
+def _count_model(train: pd.DataFrame, hcol: str, acol: str, cutoff, cfg: "Config", prior: dict):
+    """Attack/defence ratings for any per-team count (shots on target, corners) with the same decay and window as goals."""
+    if hcol not in train:
+        return None, None
+    t = train[train[hcol].notna() & train[acol].notna()]
+    if len(t) < 300:
+        return None, None
+    age = (cutoff - t.kickoff).dt.total_seconds().values / 86400
+    m = fit_counts(list(t.home), list(t.away), t[hcol].values, t[acol].values, age, cfg.xi, cfg.l2, prior)
+    return m, None
+
+
+def _dispersion(model, train: pd.DataFrame) -> float:
+    """Negative-binomial size k for per-team corner counts (var = mu + mu^2 / k), by method of moments."""
+    t = train[train.cor_h.notna() & train.cor_a.notna()].tail(760)
+    mu, y = [], []
+    for r in t.itertuples():
+        h, a = model.rates(r.home, r.away)
+        mu += [h, a]
+        y += [r.cor_h, r.cor_a]
+    mu, y = np.array(mu), np.array(y)
+    excess = float(((y - mu) ** 2 - mu).sum())
+    return float(np.clip((mu ** 2).sum() / excess, 2.0, 500.0)) if excess > 0 else 500.0
 
 
 def summarize(bt: pd.DataFrame) -> dict:

@@ -81,7 +81,7 @@ insert into public.feature_flags (key, enabled, description) values
 
 insert into public.scheduled_sync_jobs (job, cron, runner) values
   ('sync_current',         '17 * * * *',        'github-actions'),
-  ('predict_upcoming',     '0 3,9,15,21 * * *', 'github-actions'),
+  ('predict_upcoming',     '17 * * * *',        'github-actions'),
   ('settle_results',       '30 5,23 * * *',     'github-actions'),
   ('retrain_and_backtest', '0 4 * * 1',         'github-actions'),
   ('sync_history',         '0 4 * * 1',         'github-actions'),
@@ -89,4 +89,5 @@ insert into public.scheduled_sync_jobs (job, cron, runner) values
 
 insert into public.app_settings (key, value) values
   ('selection', '{"min_probability":0.6,"min_reliability":0.62,"min_lift":0.03,"max_base_rate":0.85,"max_correlation":0.5,"max_picks":5,"min_picks":4}'),
-  ('reliability_weights', '{"calibration":0.4,"sample":0.25,"completeness":0.25,"coverage":0.1}');
+  ('reliability_weights', '{"calibration":0.4,"sample":0.25,"completeness":0.25,"coverage":0.1}'),
+  ('signup', '{"open":false}');

@@ -5,7 +5,7 @@
  */
 
 :root,
-:root[data-theme='dark'] {
+:root[data-aidict-theme='dark'] {
   color-scheme: dark;
 
   /* Surfaces — warm charcoal, never pure black (matches UI reference) */
@@ -71,7 +71,7 @@
   --card-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0%, rgba(255, 255, 255, 0) 60%);
 }
 
-:root[data-theme='light'] {
+:root[data-aidict-theme='light'] {
   color-scheme: light;
   --bg: #f5f2f1;
   --bg-elev: #fbf9f8;
